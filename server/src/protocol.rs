@@ -81,6 +81,8 @@ pub struct AudioConfig {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PhoneMessage {
     Config(StreamConfig),
+    /// The "next question" button.
+    Button,
 }
 
 /// Text messages a viewer sends.
@@ -143,10 +145,27 @@ pub struct ChatMessage {
 pub enum ServerMessage<'a> {
     Config(&'a StreamConfig),
     Offline,
-    Joined { nick: &'a str },
+    Joined {
+        nick: &'a str,
+    },
     Chat(&'a ChatMessage),
-    Questions { questions: &'a [Question] },
-    Error { code: &'a str, message: &'a str },
+    Questions {
+        questions: &'a [Question],
+    },
+    /// To viewers and the AI host: just `id` and `text`. To the phone, also
+    /// whether a speech frame follows and its format.
+    QuestionPicked {
+        id: &'a str,
+        text: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        audio: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        format: Option<&'a str>,
+    },
+    Error {
+        code: &'a str,
+        message: &'a str,
+    },
 }
 
 impl ServerMessage<'_> {
@@ -168,6 +187,7 @@ pub enum ErrorCode {
     RateLimited,
     BadQuestion,
     BadSpeech,
+    NoQuestion,
 }
 
 impl ErrorCode {
@@ -182,6 +202,7 @@ impl ErrorCode {
             Self::RateLimited => "rate_limited",
             Self::BadQuestion => "bad_question",
             Self::BadSpeech => "bad_speech",
+            Self::NoQuestion => "no_question",
         }
     }
 
@@ -198,6 +219,7 @@ impl ErrorCode {
                 "Some ranked questions had a missing or too-long id or text, or a repeated id, and were skipped"
             }
             Self::BadSpeech => "Speech must be valid base64, at most 2 MB, with a short alphanumeric format",
+            Self::NoQuestion => "No questions in the queue yet",
         }
     }
 
@@ -246,7 +268,9 @@ mod tests {
     fn config_message_parses_and_serializes_with_type() {
         let json = r#"{"type":"config","video":{"codec":"avc1.42E01F","width":1280,"height":720,"framerate":15},
                        "audio":{"codec":"pcm16","sample_rate":16000,"channels":1},"extra":"ignored"}"#;
-        let PhoneMessage::Config(config) = serde_json::from_str(json).unwrap();
+        let Ok(PhoneMessage::Config(config)) = serde_json::from_str(json) else {
+            panic!("not a config message");
+        };
         assert_eq!(config.video.width, 1280);
         assert_eq!(config.audio.as_ref().unwrap().sample_rate, 16000);
 
@@ -257,9 +281,43 @@ mod tests {
     }
 
     #[test]
+    fn button_parses() {
+        assert!(matches!(
+            serde_json::from_str(r#"{"type":"button"}"#),
+            Ok(PhoneMessage::Button)
+        ));
+    }
+
+    #[test]
+    fn question_picked_leaves_out_phone_only_fields_for_others() {
+        let for_viewers = ServerMessage::QuestionPicked {
+            id: "q1",
+            text: "Ce ai studiat?",
+            audio: None,
+            format: None,
+        };
+        assert_eq!(
+            for_viewers.to_text().as_str(),
+            r#"{"type":"question_picked","id":"q1","text":"Ce ai studiat?"}"#
+        );
+        let for_phone = ServerMessage::QuestionPicked {
+            id: "q1",
+            text: "Ce ai studiat?",
+            audio: Some(true),
+            format: Some("mp3"),
+        };
+        assert_eq!(
+            for_phone.to_text().as_str(),
+            r#"{"type":"question_picked","id":"q1","text":"Ce ai studiat?","audio":true,"format":"mp3"}"#
+        );
+    }
+
+    #[test]
     fn config_without_audio_is_accepted() {
         let json = r#"{"type":"config","video":{"codec":"avc1.42E01F","width":1280,"height":720}}"#;
-        let PhoneMessage::Config(config) = serde_json::from_str(json).unwrap();
+        let Ok(PhoneMessage::Config(config)) = serde_json::from_str(json) else {
+            panic!("not a config message");
+        };
         assert_eq!(config.audio, None);
         assert_eq!(config.video.framerate, None);
     }

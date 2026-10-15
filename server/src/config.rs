@@ -15,6 +15,8 @@ pub struct Config {
     pub idle_timeout: Duration,
     /// The shortest gap allowed between two chat messages from one viewer.
     pub chat_interval: Duration,
+    /// Button presses closer together than this count as one, so a double tap doesn't skip a question.
+    pub button_debounce: Duration,
 }
 
 impl Default for Config {
@@ -27,6 +29,7 @@ impl Default for Config {
             ping_every: Duration::from_secs(5),
             idle_timeout: Duration::from_secs(15),
             chat_interval: Duration::from_secs(1),
+            button_debounce: Duration::from_secs(1),
         }
     }
 }

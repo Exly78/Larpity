@@ -5,9 +5,9 @@
 //! ever held for a few field updates, never across an await.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Mutex,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes};
@@ -17,7 +17,7 @@ use tracing::warn;
 
 use crate::{
     chat::{HISTORY, Nicknames},
-    protocol::{ChatMessage, Question, ServerMessage, StreamConfig},
+    protocol::{ChatMessage, FrameKind, Question, ServerMessage, StreamConfig, encode_frame},
 };
 
 /// How many events a viewer may fall behind before it skips ahead (~8 s of stream).
@@ -62,6 +62,21 @@ struct Inner {
     questions: Vec<Question>,
     /// Speech clips by question id.
     speech: HashMap<String, Speech>,
+    /// Every question id ever picked, so the AI host can't list one again.
+    answered: HashSet<String>,
+    /// The most recent picks, replayed to an AI host that reconnects.
+    picked: VecDeque<Question>,
+    last_pick: Option<Instant>,
+}
+
+/// What a button press did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pick {
+    Picked,
+    /// Nothing in the queue.
+    Empty,
+    /// Too soon after the previous press; treated as the same press.
+    Ignored,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -213,6 +228,9 @@ impl Hub {
                 .to_text(),
             ));
         }
+        if let Some(current) = inner.picked.back() {
+            snapshot.push(ViewerEvent::Text(picked_message(current)));
+        }
         (snapshot, self.viewers.subscribe())
     }
 
@@ -259,6 +277,10 @@ impl Hub {
         for message in &inner.history {
             let _ = tx.try_send(Message::Text(ServerMessage::Chat(message).to_text()));
         }
+        // Then what was already answered, so the AI host doesn't rank it again.
+        for question in &inner.picked {
+            let _ = tx.try_send(Message::Text(picked_message(question)));
+        }
         if let Some(old) = inner.ai.replace(Slot { session, tx }) {
             warn!("a new AI host connected; dropping the old one");
             old.replaced("another AI host took over");
@@ -285,6 +307,10 @@ impl Hub {
             return;
         }
         inner.questions = questions;
+        let Inner {
+            questions, answered, ..
+        } = &mut *inner;
+        questions.retain(|q| !answered.contains(&q.id));
         self.broadcast(ViewerEvent::Text(
             ServerMessage::Questions {
                 questions: &inner.questions,
@@ -304,6 +330,75 @@ impl Hub {
         }
         inner.speech.insert(question_id, speech);
     }
+
+    /// The button: takes the top question, sends its speech to the phone, and
+    /// tells viewers and the AI host it was picked.
+    pub fn pick_question(&self, session: u64, debounce: Duration) -> Pick {
+        let mut inner = self.lock();
+        let Some(phone) = inner.phone.as_ref().filter(|p| p.session == session) else {
+            return Pick::Ignored;
+        };
+        let phone_tx = phone.tx.clone();
+        if inner.last_pick.is_some_and(|at| at.elapsed() < debounce) {
+            return Pick::Ignored;
+        }
+        if inner.questions.is_empty() {
+            return Pick::Empty;
+        }
+        inner.last_pick = Some(Instant::now());
+        let question = inner.questions.remove(0);
+        let speech = inner.speech.remove(&question.id);
+
+        let _ = phone_tx.try_send(Message::Text(
+            ServerMessage::QuestionPicked {
+                id: &question.id,
+                text: &question.text,
+                audio: Some(speech.is_some()),
+                format: speech.as_ref().map(|s| s.format.as_str()),
+            }
+            .to_text(),
+        ));
+        if let Some(speech) = &speech {
+            let frame = encode_frame(FrameKind::Speech, false, unix_micros(), &speech.audio);
+            let _ = phone_tx.try_send(Message::Binary(frame));
+        }
+
+        let picked = picked_message(&question);
+        if let Some(ai) = &inner.ai {
+            let _ = ai.tx.try_send(Message::Text(picked.clone()));
+        }
+        self.broadcast(ViewerEvent::Text(picked));
+        self.broadcast(ViewerEvent::Text(
+            ServerMessage::Questions {
+                questions: &inner.questions,
+            }
+            .to_text(),
+        ));
+
+        inner.answered.insert(question.id.clone());
+        if inner.picked.len() == HISTORY {
+            inner.picked.pop_front();
+        }
+        inner.picked.push_back(question);
+        Pick::Picked
+    }
+}
+
+/// `question_picked` as viewers and the AI host get it.
+fn picked_message(question: &Question) -> Utf8Bytes {
+    ServerMessage::QuestionPicked {
+        id: &question.id,
+        text: &question.text,
+        audio: None,
+        format: None,
+    }
+    .to_text()
+}
+
+fn unix_micros() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_micros() as u64)
 }
 
 fn unix_millis() -> u64 {

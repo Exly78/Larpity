@@ -30,7 +30,7 @@ use tracing::{debug, info, warn};
 use crate::{
     ai, chat,
     config::Config,
-    hub::{Hub, Speech, ViewerEvent},
+    hub::{Hub, Pick, Speech, ViewerEvent},
     protocol::{AiMessage, ErrorCode, FrameHeader, FrameKind, HEADER_LEN, PhoneMessage, ServerMessage, ViewerMessage},
     recording::Recorder,
 };
@@ -130,6 +130,11 @@ async fn run_phone(state: AppState, socket: WebSocket) {
                         };
                     }
                 }
+                Ok(PhoneMessage::Button) => match state.hub.pick_question(session, state.config.button_debounce) {
+                    Pick::Picked => info!(session, "button: question picked"),
+                    Pick::Empty => send_error(&tx, ErrorCode::NoQuestion),
+                    Pick::Ignored => debug!(session, "button: ignored repeat press"),
+                },
                 Err(err) => {
                     debug!(session, %err, "bad phone message");
                     send_error(&tx, ErrorCode::BadMessage);

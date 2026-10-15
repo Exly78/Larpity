@@ -132,6 +132,10 @@ screen instead.
 Button presses less than a second apart are treated as one press, so a double
 tap doesn't skip a question.
 
+On a press the server takes the top question off the list, sends it to the
+phone (with its speech if the AI host has sent it), tells viewers with
+`question_picked` and an updated `questions` list, and tells the AI host.
+
 ## Viewer ↔ server (`/ws/viewer`)
 
 On connect the server sends, in order:
@@ -179,13 +183,15 @@ keyframe instead of disconnecting it.
 
 The AI host is a separate program in any language. It connects to the server,
 reads the chat, and sends back rankings and speech. On connect the server sends
-the last 50 chat messages so a restarted AI host catches up.
+the last 50 chat messages, then a `question_picked` for each of the last 50
+questions already answered, so a restarted AI host catches up without ranking
+answered questions again.
 
 **Server → AI**
 
 ```jsonc
 { "type": "chat", "id": 12, "nick": "Ana", "text": "Ce ai studiat?", "ts": 1760520000000 }
-{ "type": "question_picked", "id": "q7" }   // the professional is answering this one; drop it from the ranking
+{ "type": "question_picked", "id": "q7", "text": "Cât durează o operație?" }   // being answered; drop it from the ranking
 ```
 
 **AI → server**
