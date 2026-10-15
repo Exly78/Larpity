@@ -53,9 +53,20 @@ phone dropped frames, sound and picture drift apart over a long recording.
 |---|---|
 | `/ws/phone?token=…` | the phone |
 | `/ws/viewer` | viewers |
+| `/ws/ai?token=…` | the AI host |
 | `/phone/` | the phone page |
 | `/` | the viewer page |
 | `/health` | returns `ok` |
+
+## Test without the real AI
+
+`stub-ai` is a stand-in AI host: every chat message with a `?` becomes a
+question, repeats are merged with a count, and each question gets a beep as
+its speech.
+
+```sh
+cargo run --bin stub-ai -- --url ws://localhost:8080/ws/ai --token "$LARPITY_TOKEN"
+```
 
 ## Develop
 
@@ -78,5 +89,8 @@ CI runs the same three on every pull request that touches `server/`.
 - `src/ws.rs`: one reader loop and one writer task per connection. The writer
   pings every 5 s; a connection that is silent for 15 s is dropped.
 - `src/recording.rs`: writes the stream to disk, flushing every frame.
+- `src/ai.rs`: checks rankings and speech from the AI host. The hub keeps
+  the latest ranking and a speech clip per question, and forwards every chat
+  message to the AI host.
 - `src/chat.rs`: chat rules: cleaning nicknames and messages, and numbering
   taken nicknames. The hub keeps the last 50 messages for late joiners.

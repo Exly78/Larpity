@@ -91,6 +91,43 @@ pub enum ViewerMessage {
     Chat { text: String },
 }
 
+/// Text messages the AI host sends.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AiMessage {
+    /// The full ranked list, best first, replacing the previous one.
+    Ranking { questions: Vec<RankedQuestion> },
+    /// Speech for one question; `audio` is base64.
+    Speech {
+        question_id: String,
+        format: String,
+        audio: String,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RankedQuestion {
+    pub id: String,
+    pub text: String,
+    #[serde(default = "one")]
+    pub count: u32,
+    /// Which chat messages asked it. Accepted for the AI host's own bookkeeping; not forwarded.
+    #[serde(default)]
+    pub chat_ids: Vec<u64>,
+}
+
+fn one() -> u32 {
+    1
+}
+
+/// A ranked question as viewers see it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Question {
+    pub id: String,
+    pub text: String,
+    pub count: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ChatMessage {
     pub id: u64,
@@ -108,6 +145,7 @@ pub enum ServerMessage<'a> {
     Offline,
     Joined { nick: &'a str },
     Chat(&'a ChatMessage),
+    Questions { questions: &'a [Question] },
     Error { code: &'a str, message: &'a str },
 }
 
@@ -128,6 +166,8 @@ pub enum ErrorCode {
     BadNick,
     BadText,
     RateLimited,
+    BadQuestion,
+    BadSpeech,
 }
 
 impl ErrorCode {
@@ -140,6 +180,8 @@ impl ErrorCode {
             Self::BadNick => "bad_nick",
             Self::BadText => "bad_text",
             Self::RateLimited => "rate_limited",
+            Self::BadQuestion => "bad_question",
+            Self::BadSpeech => "bad_speech",
         }
     }
 
@@ -152,6 +194,10 @@ impl ErrorCode {
             Self::BadNick => "Nicknames are 1 to 24 characters",
             Self::BadText => "Messages are 1 to 200 characters",
             Self::RateLimited => "One message per second, please",
+            Self::BadQuestion => {
+                "Some ranked questions had a missing or too-long id or text, or a repeated id, and were skipped"
+            }
+            Self::BadSpeech => "Speech must be valid base64, at most 2 MB, with a short alphanumeric format",
         }
     }
 

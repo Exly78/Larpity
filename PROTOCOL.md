@@ -192,8 +192,8 @@ the last 50 chat messages so a restarted AI host catches up.
 
 ```jsonc
 // The full ranked list, best first, replacing the previous one. Up to 20 questions.
-// id: your own stable id for the question, so speech can refer to it.
-// text: one short spoken sentence. count: how many chat messages asked it.
+// id: your own id for the question (1-64 characters), so speech can refer to it.
+// text: one short spoken sentence (up to 300 characters). count: how many chat messages asked it.
 { "type": "ranking", "questions": [
     { "id": "q7", "text": "Cât durează o operație?", "count": 4, "chat_ids": [12, 15, 19, 20] } ] }
 
@@ -203,8 +203,16 @@ the last 50 chat messages so a restarted AI host catches up.
 ```
 
 `chat_ids` is optional. The server forwards `ranking` to viewers as
-`questions` (without `chat_ids`), never re-lists a question that has already
-been picked, and keeps the last ranking and speech if the AI host disconnects.
+`questions` (without `chat_ids`) and keeps the last ranking and speech if the
+AI host disconnects. Questions with a missing or too-long id or text are
+skipped (with a `bad_question` error), and anything past 20 is dropped.
+
+**Never reuse an id** for a different question, not even after the AI host
+restarts: the server remembers picked ids and won't list them again. Starting
+ids with the time the AI host started (`"1760520000-1"`) is enough.
+
+`server/src/bin/stub-ai.rs` is a working stand-in that merges repeated
+questions without an LLM; run it with `cargo run --bin stub-ai`.
 
 ## Error codes
 
@@ -218,4 +226,5 @@ been picked, and keeps the last ranking and speech if the AI host disconnects.
 | `bad_nick` | viewer | nickname empty or too long |
 | `bad_text` | viewer | message empty or too long |
 | `rate_limited` | viewer | more than one message per second |
+| `bad_question` | AI | some ranked questions were invalid and skipped |
 | `bad_speech` | AI | `audio` isn't valid base64 or is too big |

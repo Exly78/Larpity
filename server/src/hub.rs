@@ -5,7 +5,7 @@
 //! ever held for a few field updates, never across an await.
 
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -17,13 +17,15 @@ use tracing::warn;
 
 use crate::{
     chat::{HISTORY, Nicknames},
-    protocol::{ChatMessage, ServerMessage, StreamConfig},
+    protocol::{ChatMessage, Question, ServerMessage, StreamConfig},
 };
 
 /// How many events a viewer may fall behind before it skips ahead (~8 s of stream).
 const VIEWER_BACKLOG: usize = 512;
 /// Stop caching for late joiners if the phone goes this long without a keyframe (10 s at 15 fps).
 const MAX_GOP_FRAMES: usize = 150;
+/// Speech clips kept at once; well above the 20 questions a ranking can hold.
+const MAX_SPEECH_CLIPS: usize = 64;
 
 /// What every viewer receives.
 #[derive(Debug, Clone)]
@@ -55,10 +57,20 @@ struct Inner {
     next_chat_id: u64,
     history: VecDeque<ChatMessage>,
     nicknames: Nicknames,
+    ai: Option<Slot>,
+    /// The AI host's latest ranking, best first.
+    questions: Vec<Question>,
+    /// Speech clips by question id.
+    speech: HashMap<String, Speech>,
 }
 
-/// The connection currently acting as the phone. Dropping it drops the sender,
-/// which ends that connection's writer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Speech {
+    pub format: String,
+    pub audio: Bytes,
+}
+
+/// The connection currently acting as the phone or the AI host.
 struct Slot {
     session: u64,
     tx: mpsc::Sender<Message>,
@@ -193,6 +205,14 @@ impl Hub {
                 .iter()
                 .map(|message| ViewerEvent::Text(ServerMessage::Chat(message).to_text())),
         );
+        if !inner.questions.is_empty() {
+            snapshot.push(ViewerEvent::Text(
+                ServerMessage::Questions {
+                    questions: &inner.questions,
+                }
+                .to_text(),
+            ));
+        }
         (snapshot, self.viewers.subscribe())
     }
 
@@ -219,11 +239,70 @@ impl Hub {
             text,
             ts: unix_millis(),
         };
-        self.broadcast(ViewerEvent::Text(ServerMessage::Chat(&message).to_text()));
+        let text = ServerMessage::Chat(&message).to_text();
+        if let Some(ai) = &inner.ai {
+            let _ = ai.tx.try_send(Message::Text(text.clone()));
+        }
+        self.broadcast(ViewerEvent::Text(text));
         if inner.history.len() == HISTORY {
             inner.history.pop_front();
         }
         inner.history.push_back(message);
+    }
+
+    /// Makes this connection the AI host, replacing any earlier one, and queues
+    /// the recent chat so it can catch up. Returns its session id.
+    pub fn attach_ai(&self, tx: mpsc::Sender<Message>) -> u64 {
+        let mut inner = self.lock();
+        inner.next_session += 1;
+        let session = inner.next_session;
+        for message in &inner.history {
+            let _ = tx.try_send(Message::Text(ServerMessage::Chat(message).to_text()));
+        }
+        if let Some(old) = inner.ai.replace(Slot { session, tx }) {
+            warn!("a new AI host connected; dropping the old one");
+            old.replaced("another AI host took over");
+        }
+        session
+    }
+
+    pub fn is_ai(&self, session: u64) -> bool {
+        self.lock().ai.as_ref().is_some_and(|ai| ai.session == session)
+    }
+
+    /// Forgets the connection but keeps its last ranking and speech, so the
+    /// button still works while the AI host restarts.
+    pub fn detach_ai(&self, session: u64) {
+        let mut inner = self.lock();
+        if inner.ai.as_ref().is_some_and(|ai| ai.session == session) {
+            inner.ai = None;
+        }
+    }
+
+    pub fn set_ranking(&self, session: u64, questions: Vec<Question>) {
+        let mut inner = self.lock();
+        if !inner.ai.as_ref().is_some_and(|ai| ai.session == session) {
+            return;
+        }
+        inner.questions = questions;
+        self.broadcast(ViewerEvent::Text(
+            ServerMessage::Questions {
+                questions: &inner.questions,
+            }
+            .to_text(),
+        ));
+    }
+
+    pub fn add_speech(&self, session: u64, question_id: String, speech: Speech) {
+        let mut inner = self.lock();
+        if !inner.ai.as_ref().is_some_and(|ai| ai.session == session) {
+            return;
+        }
+        if inner.speech.len() >= MAX_SPEECH_CLIPS && !inner.speech.contains_key(&question_id) {
+            let Inner { speech, questions, .. } = &mut *inner;
+            speech.retain(|id, _| questions.iter().any(|q| &q.id == id));
+        }
+        inner.speech.insert(question_id, speech);
     }
 }
 

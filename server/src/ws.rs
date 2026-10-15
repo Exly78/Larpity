@@ -28,10 +28,10 @@ use tower_http::services::ServeDir;
 use tracing::{debug, info, warn};
 
 use crate::{
-    chat,
+    ai, chat,
     config::Config,
-    hub::{Hub, ViewerEvent},
-    protocol::{ErrorCode, FrameHeader, FrameKind, HEADER_LEN, PhoneMessage, ServerMessage, ViewerMessage},
+    hub::{Hub, Speech, ViewerEvent},
+    protocol::{AiMessage, ErrorCode, FrameHeader, FrameKind, HEADER_LEN, PhoneMessage, ServerMessage, ViewerMessage},
     recording::Recorder,
 };
 
@@ -39,7 +39,11 @@ use crate::{
 const PHONE_MAX_MESSAGE: usize = 4 << 20;
 /// Viewers only send small JSON.
 const VIEWER_MAX_MESSAGE: usize = 4 << 10;
+/// Speech arrives as up to 2 MB of audio in base64.
+const AI_MAX_MESSAGE: usize = 4 << 20;
 const OUTBOX: usize = 64;
+/// The AI host gets the chat history on connect, then every message.
+const AI_OUTBOX: usize = 1024;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -57,6 +61,7 @@ pub fn router(config: Config) -> Router {
     Router::new()
         .route("/ws/phone", get(phone_ws))
         .route("/ws/viewer", get(viewer_ws))
+        .route("/ws/ai", get(ai_ws))
         .route("/health", get(|| async { "ok" }))
         // Without the slash, relative links on the phone page would resolve against `/`.
         .route("/phone", get(|| async { Redirect::permanent("/phone/") }))
@@ -81,6 +86,14 @@ async fn phone_ws(State(state): State<AppState>, Query(query): Query<TokenQuery>
 async fn viewer_ws(State(state): State<AppState>, ws: WebSocketUpgrade) -> Response {
     ws.max_message_size(VIEWER_MAX_MESSAGE)
         .on_upgrade(move |socket| run_viewer(state, socket))
+}
+
+async fn ai_ws(State(state): State<AppState>, Query(query): Query<TokenQuery>, ws: WebSocketUpgrade) -> Response {
+    if !state.config.authorized(query.token.as_deref()) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    ws.max_message_size(AI_MAX_MESSAGE)
+        .on_upgrade(move |socket| run_ai(state, socket))
 }
 
 async fn run_phone(state: AppState, socket: WebSocket) {
@@ -205,6 +218,55 @@ async fn run_viewer(state: AppState, socket: WebSocket) {
     drop(tx);
     finish(writer).await;
     info!(viewers = state.hub.viewer_count(), "viewer disconnected");
+}
+
+async fn run_ai(state: AppState, socket: WebSocket) {
+    let (sink, stream) = socket.split();
+    let (tx, rx) = mpsc::channel(AI_OUTBOX);
+    let session = state.hub.attach_ai(tx.clone());
+    info!(session, "AI host connected");
+    let writer = tokio::spawn(write_loop(sink, rx, state.config.ping_every));
+    let mut inbound = Inbound::new(stream, state.config.idle_timeout);
+
+    while let Some(message) = inbound.next().await {
+        if !state.hub.is_ai(session) {
+            break;
+        }
+        let Message::Text(text) = message else {
+            send_error(&tx, ErrorCode::BadMessage);
+            continue;
+        };
+        match serde_json::from_str::<AiMessage>(&text) {
+            Ok(AiMessage::Ranking { questions }) => {
+                let (questions, skipped) = ai::clean_ranking(questions);
+                if skipped {
+                    send_error(&tx, ErrorCode::BadQuestion);
+                }
+                debug!(session, count = questions.len(), "new ranking");
+                state.hub.set_ranking(session, questions);
+            }
+            Ok(AiMessage::Speech {
+                question_id,
+                format,
+                audio,
+            }) => match ai::decode_speech(&format, &audio) {
+                Some(audio) => {
+                    debug!(session, question_id, bytes = audio.len(), "speech ready");
+                    state.hub.add_speech(session, question_id, Speech { format, audio });
+                }
+                None => send_error(&tx, ErrorCode::BadSpeech),
+            },
+            Err(err) => {
+                debug!(session, %err, "bad AI message");
+                send_error(&tx, ErrorCode::BadMessage);
+            }
+        }
+    }
+
+    state.hub.detach_ai(session);
+    info!(session, "AI host disconnected");
+    drop(tx);
+    finish(writer).await;
 }
 
 /// Writes a frame to the recording, if there is one. A disk error stops the

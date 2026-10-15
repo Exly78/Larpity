@@ -18,7 +18,9 @@ pub fn clean_text(raw: &str) -> Option<String> {
     clean(raw, MAX_TEXT_CHARS)
 }
 
-fn clean(raw: &str, max_chars: usize) -> Option<String> {
+/// Trims, collapses whitespace and drops invisible characters; `None` if the
+/// result is empty or longer than `max_chars`.
+pub fn clean(raw: &str, max_chars: usize) -> Option<String> {
     let visible: String = raw.chars().filter(|&c| !is_invisible(c)).collect();
     let cleaned = visible.split_whitespace().collect::<Vec<_>>().join(" ");
     let chars = cleaned.chars().count();
