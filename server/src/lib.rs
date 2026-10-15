@@ -1,5 +1,6 @@
 //! The Larpity server: relays the phone's stream to viewers. See PROTOCOL.md.
 
+pub mod chat;
 pub mod config;
 pub mod hub;
 pub mod protocol;

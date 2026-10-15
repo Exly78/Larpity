@@ -28,9 +28,10 @@ use tower_http::services::ServeDir;
 use tracing::{debug, info, warn};
 
 use crate::{
+    chat,
     config::Config,
     hub::{Hub, ViewerEvent},
-    protocol::{ErrorCode, FrameHeader, FrameKind, HEADER_LEN, PhoneMessage},
+    protocol::{ErrorCode, FrameHeader, FrameKind, HEADER_LEN, PhoneMessage, ServerMessage, ViewerMessage},
     recording::Recorder,
 };
 
@@ -160,9 +161,47 @@ async fn run_viewer(state: AppState, socket: WebSocket) {
     info!(viewers = state.hub.viewer_count(), "viewer connected");
     let writer = tokio::spawn(viewer_write_loop(sink, snapshot, events, rx, state.config.ping_every));
     let mut inbound = Inbound::new(stream, state.config.idle_timeout);
+    let mut nick: Option<String> = None;
+    let mut last_chat: Option<Instant> = None;
 
-    while inbound.next().await.is_some() {}
+    while let Some(message) = inbound.next().await {
+        let Message::Text(text) = message else {
+            send_error(&tx, ErrorCode::BadMessage);
+            continue;
+        };
+        match serde_json::from_str::<ViewerMessage>(&text) {
+            Ok(ViewerMessage::Join { nick: wanted }) => {
+                let Some(wanted) = chat::clean_nick(&wanted) else {
+                    send_error(&tx, ErrorCode::BadNick);
+                    continue;
+                };
+                let given = state.hub.claim_nick(&wanted, nick.as_deref());
+                let _ = tx.try_send(Message::Text(ServerMessage::Joined { nick: &given }.to_text()));
+                nick = Some(given);
+            }
+            Ok(ViewerMessage::Chat { text }) => {
+                let Some(nick) = &nick else {
+                    send_error(&tx, ErrorCode::JoinRequired);
+                    continue;
+                };
+                let Some(text) = chat::clean_text(&text) else {
+                    send_error(&tx, ErrorCode::BadText);
+                    continue;
+                };
+                if last_chat.is_some_and(|at| at.elapsed() < state.config.chat_interval) {
+                    send_error(&tx, ErrorCode::RateLimited);
+                    continue;
+                }
+                last_chat = Some(Instant::now());
+                state.hub.post_chat(nick, text);
+            }
+            Err(_) => send_error(&tx, ErrorCode::BadMessage),
+        }
+    }
 
+    if let Some(nick) = nick {
+        state.hub.release_nick(&nick);
+    }
     drop(tx);
     finish(writer).await;
     info!(viewers = state.hub.viewer_count(), "viewer disconnected");
@@ -295,6 +334,7 @@ impl KeyframeGate {
                 self.open.then_some(Message::Binary(frame))
             }
             ViewerEvent::Audio(frame) => Some(Message::Binary(frame)),
+            ViewerEvent::Text(text) => Some(Message::Text(text)),
         }
     }
 

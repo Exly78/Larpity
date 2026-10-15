@@ -78,3 +78,5 @@ CI runs the same three on every pull request that touches `server/`.
 - `src/ws.rs`: one reader loop and one writer task per connection. The writer
   pings every 5 s; a connection that is silent for 15 s is dropped.
 - `src/recording.rs`: writes the stream to disk, flushing every frame.
+- `src/chat.rs`: chat rules: cleaning nicknames and messages, and numbering
+  taken nicknames. The hub keeps the last 50 messages for late joiners.

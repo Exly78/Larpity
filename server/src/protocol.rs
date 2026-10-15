@@ -83,12 +83,31 @@ pub enum PhoneMessage {
     Config(StreamConfig),
 }
 
+/// Text messages a viewer sends.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ViewerMessage {
+    Join { nick: String },
+    Chat { text: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ChatMessage {
+    pub id: u64,
+    pub nick: String,
+    pub text: String,
+    /// Unix time in milliseconds.
+    pub ts: u64,
+}
+
 /// Text messages the server sends.
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage<'a> {
     Config(&'a StreamConfig),
     Offline,
+    Joined { nick: &'a str },
+    Chat(&'a ChatMessage),
     Error { code: &'a str, message: &'a str },
 }
 
@@ -105,6 +124,10 @@ pub enum ErrorCode {
     BadMessage,
     BadFrame,
     ConfigRequired,
+    JoinRequired,
+    BadNick,
+    BadText,
+    RateLimited,
 }
 
 impl ErrorCode {
@@ -113,6 +136,10 @@ impl ErrorCode {
             Self::BadMessage => "bad_message",
             Self::BadFrame => "bad_frame",
             Self::ConfigRequired => "config_required",
+            Self::JoinRequired => "join_required",
+            Self::BadNick => "bad_nick",
+            Self::BadText => "bad_text",
+            Self::RateLimited => "rate_limited",
         }
     }
 
@@ -121,6 +148,10 @@ impl ErrorCode {
             Self::BadMessage => "Not valid JSON, or an unknown message type",
             Self::BadFrame => "Binary frame too short or of an unknown kind",
             Self::ConfigRequired => "Send a config message before any media",
+            Self::JoinRequired => "Pick a nickname (join) before chatting",
+            Self::BadNick => "Nicknames are 1 to 24 characters",
+            Self::BadText => "Messages are 1 to 200 characters",
+            Self::RateLimited => "One message per second, please",
         }
     }
 

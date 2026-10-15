@@ -13,6 +13,8 @@ pub struct Config {
     pub ping_every: Duration,
     /// A connection that sends nothing (not even a pong) for this long is dropped.
     pub idle_timeout: Duration,
+    /// The shortest gap allowed between two chat messages from one viewer.
+    pub chat_interval: Duration,
 }
 
 impl Default for Config {
@@ -24,6 +26,7 @@ impl Default for Config {
             firmware_dir: PathBuf::from("../firmware"),
             ping_every: Duration::from_secs(5),
             idle_timeout: Duration::from_secs(15),
+            chat_interval: Duration::from_secs(1),
         }
     }
 }

@@ -4,14 +4,21 @@
 //! subscription with nothing missed or repeated between them. The lock is only
 //! ever held for a few field updates, never across an await.
 
-use std::sync::Mutex;
+use std::{
+    collections::VecDeque,
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes};
 use bytes::Bytes;
 use tokio::sync::{broadcast, mpsc};
 use tracing::warn;
 
-use crate::protocol::{ServerMessage, StreamConfig};
+use crate::{
+    chat::{HISTORY, Nicknames},
+    protocol::{ChatMessage, ServerMessage, StreamConfig},
+};
 
 /// How many events a viewer may fall behind before it skips ahead (~8 s of stream).
 const VIEWER_BACKLOG: usize = 512;
@@ -28,6 +35,8 @@ pub enum ViewerEvent {
         keyframe: bool,
     },
     Audio(Bytes),
+    /// Any other message, e.g. chat.
+    Text(Utf8Bytes),
 }
 
 pub struct Hub {
@@ -43,6 +52,9 @@ struct Inner {
     stream: Option<Utf8Bytes>,
     /// Video frames since the last keyframe, so late joiners can start decoding at once.
     gop: Vec<Bytes>,
+    next_chat_id: u64,
+    history: VecDeque<ChatMessage>,
+    nicknames: Nicknames,
 }
 
 /// The connection currently acting as the phone. Dropping it drops the sender,
@@ -175,6 +187,48 @@ impl Hub {
             }
             None => snapshot.push(ViewerEvent::StreamReset(ServerMessage::Offline.to_text())),
         }
+        snapshot.extend(
+            inner
+                .history
+                .iter()
+                .map(|message| ViewerEvent::Text(ServerMessage::Chat(message).to_text())),
+        );
         (snapshot, self.viewers.subscribe())
     }
+
+    /// Reserves a nickname (adding a number if it is taken) and frees the viewer's old one.
+    pub fn claim_nick(&self, wanted: &str, previous: Option<&str>) -> String {
+        let mut inner = self.lock();
+        if let Some(previous) = previous {
+            inner.nicknames.release(previous);
+        }
+        inner.nicknames.claim(wanted)
+    }
+
+    pub fn release_nick(&self, nick: &str) {
+        self.lock().nicknames.release(nick);
+    }
+
+    /// Sends a chat message to every viewer and keeps it for late joiners.
+    pub fn post_chat(&self, nick: &str, text: String) {
+        let mut inner = self.lock();
+        inner.next_chat_id += 1;
+        let message = ChatMessage {
+            id: inner.next_chat_id,
+            nick: nick.to_owned(),
+            text,
+            ts: unix_millis(),
+        };
+        self.broadcast(ViewerEvent::Text(ServerMessage::Chat(&message).to_text()));
+        if inner.history.len() == HISTORY {
+            inner.history.pop_front();
+        }
+        inner.history.push_back(message);
+    }
+}
+
+fn unix_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
