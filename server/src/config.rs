@@ -4,6 +4,8 @@ use std::{env, path::PathBuf, time::Duration};
 pub struct Config {
     /// Shared secret the phone and AI host must pass as `?token=`. `None` lets anyone in (local testing).
     pub token: Option<String>,
+    /// Where to save each stream; `None` turns recording off.
+    pub record_dir: Option<PathBuf>,
     /// Served at `/`.
     pub client_dir: PathBuf,
     /// Served at `/phone/`.
@@ -17,6 +19,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             token: None,
+            record_dir: None,
             client_dir: PathBuf::from("../client"),
             firmware_dir: PathBuf::from("../firmware"),
             ping_every: Duration::from_secs(5),
@@ -30,6 +33,9 @@ impl Config {
     pub fn from_env() -> Self {
         let mut config = Self {
             token: env::var("LARPITY_TOKEN").ok().filter(|t| !t.is_empty()),
+            record_dir: env::var_os("LARPITY_RECORD_DIR")
+                .filter(|d| !d.is_empty())
+                .map(PathBuf::from),
             ..Self::default()
         };
         if let Ok(dir) = env::var("LARPITY_CLIENT_DIR") {

@@ -25,12 +25,13 @@ use tokio::{
     time::{Instant, interval_at, timeout},
 };
 use tower_http::services::ServeDir;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::{
     config::Config,
     hub::{Hub, ViewerEvent},
-    protocol::{ErrorCode, FrameHeader, FrameKind, PhoneMessage},
+    protocol::{ErrorCode, FrameHeader, FrameKind, HEADER_LEN, PhoneMessage},
+    recording::Recorder,
 };
 
 /// Keyframes at 720p can be a few hundred KB; leave plenty of room.
@@ -90,6 +91,7 @@ async fn run_phone(state: AppState, socket: WebSocket) {
     let mut inbound = Inbound::new(stream, state.config.idle_timeout);
     let mut configured = false;
     let mut warned_unconfigured = false;
+    let mut recorder: Option<Recorder> = None;
 
     while let Some(message) = inbound.next().await {
         if !state.hub.is_phone(session) {
@@ -101,6 +103,18 @@ async fn run_phone(state: AppState, socket: WebSocket) {
                     info!(session, ?config, "stream config");
                     state.hub.set_config(session, &config);
                     configured = true;
+                    if let Some(dir) = &state.config.record_dir {
+                        recorder = match Recorder::start(dir, &config).await {
+                            Ok(rec) => {
+                                info!(session, path = %rec.base().display(), "recording");
+                                Some(rec)
+                            }
+                            Err(err) => {
+                                warn!(session, %err, "can't start a recording");
+                                None
+                            }
+                        };
+                    }
                 }
                 Err(err) => {
                     debug!(session, %err, "bad phone message");
@@ -120,10 +134,14 @@ async fn run_phone(state: AppState, socket: WebSocket) {
                     continue;
                 }
                 match header.kind {
-                    FrameKind::Video => state.hub.publish_video(session, frame, header.keyframe),
-                    FrameKind::Audio => state.hub.publish_audio(session, frame),
-                    FrameKind::Speech => send_error(&tx, ErrorCode::BadFrame),
+                    FrameKind::Video => state.hub.publish_video(session, frame.clone(), header.keyframe),
+                    FrameKind::Audio => state.hub.publish_audio(session, frame.clone()),
+                    FrameKind::Speech => {
+                        send_error(&tx, ErrorCode::BadFrame);
+                        continue;
+                    }
                 }
+                record(&mut recorder, header.kind, &frame[HEADER_LEN..]).await;
             }
             _ => {}
         }
@@ -148,6 +166,21 @@ async fn run_viewer(state: AppState, socket: WebSocket) {
     drop(tx);
     finish(writer).await;
     info!(viewers = state.hub.viewer_count(), "viewer disconnected");
+}
+
+/// Writes a frame to the recording, if there is one. A disk error stops the
+/// recording but never the stream.
+async fn record(recorder: &mut Option<Recorder>, kind: FrameKind, payload: &[u8]) {
+    let Some(rec) = recorder else { return };
+    let result = match kind {
+        FrameKind::Video => rec.video(payload).await,
+        FrameKind::Audio => rec.audio(payload).await,
+        FrameKind::Speech => Ok(()),
+    };
+    if let Err(err) = result {
+        warn!(%err, path = %rec.base().display(), "recording failed; stopping it");
+        *recorder = None;
+    }
 }
 
 fn send_error(tx: &mpsc::Sender<Message>, code: ErrorCode) {

@@ -3,6 +3,7 @@
 pub mod config;
 pub mod hub;
 pub mod protocol;
+pub mod recording;
 mod ws;
 
 pub use config::Config;
