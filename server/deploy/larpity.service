@@ -1,0 +1,16 @@
+[Unit]
+Description=Larpity server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/larpity.env
+ExecStart=/opt/larpity/server/target/release/larpity-server
+DynamicUser=yes
+# Creates /var/lib/larpity for recordings.
+StateDirectory=larpity
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

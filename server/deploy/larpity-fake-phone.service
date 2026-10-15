@@ -1,0 +1,16 @@
+[Unit]
+Description=Larpity fake phone: loops the test clip so viewers always have a stream
+After=larpity.service
+Wants=larpity.service
+
+[Service]
+EnvironmentFile=/etc/larpity.env
+ExecStart=/opt/larpity/server/target/release/fake-phone --clip /opt/larpity/test-clip.h264 --url ws://127.0.0.1:8080/ws/phone
+DynamicUser=yes
+# It exits cleanly when a real phone takes over, and stays stopped until
+# started again with: systemctl start larpity-fake-phone
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

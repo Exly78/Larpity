@@ -5,6 +5,7 @@
 /server/recordings/
 *.h264
 *.pcm
+!/server/tests/fixtures/*.h264
 
 # Editors / OS
 .DS_Store

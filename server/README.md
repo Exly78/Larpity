@@ -14,7 +14,26 @@ cargo run --release
 Then open <http://localhost:8080/> for the viewer page (`client/`) and
 <http://localhost:8080/phone/> for the phone page (`firmware/`). Browsers only
 allow the camera and WebCodecs on `localhost` or HTTPS, so test on a real phone
-through the deployed server (see [`deploy/`](deploy/)).
+through the deployed server (see [`deploy/`](deploy/README.md)).
+
+## Test without a phone
+
+`fake-phone` streams an H.264 clip on a loop, exactly as the phone would, with
+a 440 Hz tone as the audio. Press Enter in its terminal to press the button.
+
+```sh
+scripts/make-test-clip.sh                        # once; needs ffmpeg
+cargo run --release &                            # the server
+cargo run --release --bin fake-phone -- --clip test-clip.h264
+```
+
+To stream Ski's sample clip instead, turn it into a raw H.264 file first:
+
+```sh
+ffmpeg -i sample.mp4 -an -c:v copy -bsf:v h264_mp4toannexb -f h264 sample.h264
+```
+
+A recording from the server (`larpity-<time>.h264`) can be streamed as it is.
 
 Settings come from environment variables:
 
@@ -58,7 +77,7 @@ phone dropped frames, sound and picture drift apart over a long recording.
 | `/` | the viewer page |
 | `/health` | returns `ok` |
 
-## Test without the real AI
+## Test without the AI host
 
 `stub-ai` is a stand-in AI host: every chat message with a `?` becomes a
 question, repeats are merged with a count, and each question gets a beep as
@@ -92,5 +111,7 @@ CI runs the same three on every pull request that touches `server/`.
 - `src/ai.rs`: checks rankings and speech from the AI host. The hub keeps
   the latest ranking and a speech clip per question, and forwards every chat
   message to the AI host.
+- `src/annexb.rs`: splits a `.h264` file into frames and reads its size and
+  codec string, for `fake-phone`.
 - `src/chat.rs`: chat rules: cleaning nicknames and messages, and numbering
   taken nicknames. The hub keeps the last 50 messages for late joiners.

@@ -2,6 +2,7 @@
 //! talks to the AI host. See PROTOCOL.md.
 
 pub mod ai;
+pub mod annexb;
 pub mod chat;
 pub mod config;
 pub mod hub;
