@@ -9,9 +9,11 @@ connection:
 | `/ws/viewer` | the viewer page in `client/` | any number | none |
 | `/ws/ai?token=<token>` | the AI host | one at a time | token |
 
-A second phone (or AI host) that connects takes over from the first one, which
-the server then disconnects. This is how a phone reconnects after switching
-between Wi-Fi and mobile data: it just connects again.
+A second phone (or AI host) that connects takes over from the first one. The
+server closes the old connection with close code **4000**; a page that gets
+4000 must not reconnect, or two phones would keep kicking each other off. For
+any other close or error, reconnect: that is how a phone recovers after
+switching between Wi-Fi and mobile data.
 
 Every connection carries two kinds of WebSocket message:
 
