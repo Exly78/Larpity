@@ -5,8 +5,8 @@ asking, and makes the Romanian speech the professional hears when they press the
 button. It is a separate program that talks to the server over `/ws/ai` (see the
 AI section of [`PROTOCOL.md`](../PROTOCOL.md)). Owner: Ski.
 
-Nothing here runs yet. This folder holds the decisions and the prompt; the code
-comes with #30, once its language is picked. Until then,
+The host itself isn't written yet. This folder holds the decisions, the prompt and
+a script that tests the prompt; the host comes with #30, once its language is picked. Until then,
 `server/src/bin/stub-ai.rs` stands in for it.
 
 ## Providers (decided in #28)
@@ -89,15 +89,20 @@ spam, greetings, an insult, and a question asked again after it was answered.
 [`tests/fake-chat.expected.json`](tests/fake-chat.expected.json) gives the
 decision each message should get, and the final list.
 
-To check a model or prompt, feed the messages in order: for each `chat`, send the
-prompt with the current list and the message, apply the decision, and compare.
-For each `question_picked`, remove that question from the list and add it to the
-answered list. The decisions and merge targets must match exactly. The wording
-of each `new` question can differ from the expected one, as long as it follows
-the rules above.
+Run it with plain Python 3 (no packages):
 
-This is done by hand for now (e.g. in the OpenRouter playground); #30 turns it
-into a script once the host's language is picked.
+```sh
+OPENROUTER_API_KEY=... python3 ai/tests/run_fake_chat.py [--model <openrouter id>]
+```
+
+It sends the prompt once per chat message and prints each decision, how long it
+took, and a total. The decisions and merge targets must match exactly. The
+wording of each `new` question can differ from the expected one, as long as it
+follows the rules above. Each message is judged against the list as it should be
+at that point, so one wrong answer doesn't spoil the rest. It exits 0 when all
+decisions are right.
+
+The script is only the test. The host itself, and its language, come in #30.
 
 ## Still to do
 
