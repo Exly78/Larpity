@@ -1,0 +1,15 @@
+[Unit]
+Description=Larpity stub AI host: stands in until the real one is ready
+After=larpity.service
+Wants=larpity.service
+
+[Service]
+EnvironmentFile=/etc/larpity.env
+ExecStart=/opt/larpity/server/target/release/stub-ai --url ws://127.0.0.1:8080/ws/ai
+DynamicUser=yes
+# It exits cleanly when another AI host takes over.
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

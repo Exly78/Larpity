@@ -1,0 +1,5 @@
+# Replace larpity.example.com with your domain. Caddy gets and renews the HTTPS
+# certificate on its own and passes WebSockets through unchanged.
+larpity.example.com {
+	reverse_proxy 127.0.0.1:8080
+}
