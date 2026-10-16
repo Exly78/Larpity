@@ -20,9 +20,12 @@ or `package.json` on your own. When it lands, put the build and check commands h
   `VideoFrame.timestamp` (µs).
 - Don't build a backlog on a slow network. If `ws.bufferedAmount` keeps growing,
   skip frames until the next keyframe rather than sending late video.
-- Close code 4000 means another phone took over: stop, say so on screen, and don't
-  reconnect. Any other close: reconnect with backoff, send `config` again, and start
-  with a keyframe.
+- Talk to the server through `PhoneSocket` in `reconnect.js` (#20), never a bare
+  `WebSocket`. It reconnects with backoff after a drop or a network switch, gives
+  up on a socket whose data stops moving, and stops for good on close code 4000
+  (another phone took over: say so on screen). Send `config` and force the next
+  keyframe in its `onOpen`, which runs on every connection. Keep the camera and
+  encoder running while it's down; `send()` returns false and those frames are dropped.
 - Speech comes as `question_picked` followed by a kind-3 frame. Play it with
   `AudioContext.decodeAudioData`. When `audio` is `false`, show the text instead.
 - Keep the screen awake with the Screen Wake Lock API, and get it back on
@@ -38,3 +41,7 @@ or `package.json` on your own. When it lands, put the build and check commands h
 Run the stack with the `run-stack` skill and open
 <http://localhost:8080/phone/?token=dev> on a laptop with a webcam. A real phone
 needs HTTPS, so use the deployed test server.
+
+With the server running (token `dev`), `node --test firmware/tests/reconnect.test.mjs`
+(Node 22+, no packages) checks the reconnect logic through a proxy that cuts or
+freezes the connection. Run it after changing `reconnect.js`.
