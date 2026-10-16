@@ -9,4 +9,20 @@ export const t = {
     chatEmpty: "Încă nu sunt mesaje. Pune prima întrebare!",
     chatPlaceholder: "Scrie o întrebare…",
     send: "Trimite",
+    // Chat (#25)
+    nickPlaceholder: "Alege-ți un nume",
+    join: "Intră",
+    writingAs: "Scrii ca",
+    changeNick: "Schimbă",
+    connecting: "Ne conectăm…",
 };
+// Romanian text for the server's error codes (PROTOCOL.md, "Error codes").
+// The server's own `message` is English, for developers, so it is never shown.
+export const errorText = {
+    bad_message: "Ceva n-a mers. Încearcă din nou.",
+    join_required: "Alege-ți un nume înainte să scrii.",
+    bad_nick: "Numele trebuie să aibă între 1 și 24 de caractere.",
+    bad_text: "Mesajul trebuie să aibă între 1 și 200 de caractere.",
+    rate_limited: "Prea repede! Așteaptă o secundă.",
+};
+export const unknownError = "Ceva n-a mers. Încearcă din nou.";

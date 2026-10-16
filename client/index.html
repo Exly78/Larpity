@@ -31,8 +31,16 @@
     <!-- #25: chat messages the server sends back -->
     <ul class="chat" id="chat"></ul>
 
+    <p class="chat-error" id="chat-error" role="alert" hidden></p>
+    <!-- Shown once the server has confirmed a nickname with `joined` -->
+    <p class="me" id="me" hidden>
+      <span id="me-label"></span> <strong id="me-nick"></strong>
+      <button type="button" id="change-nick"></button>
+    </p>
+
+    <!-- One box: picks the nickname first, then sends chat messages -->
     <form class="composer" id="composer">
-      <input id="chat-input" type="text" maxlength="500" autocomplete="off" enterkeyhint="send" />
+      <input id="chat-input" type="text" autocomplete="off" enterkeyhint="send" />
       <button type="submit" id="send-btn"></button>
     </form>
   </div>
