@@ -47,8 +47,8 @@ its commands and rules; it loads when you touch files there.
 - Commits: an imperative summary line, then a body saying why. Reference the
   issue with `Refs #N`, never `Closes #N` / `Fixes #N`: those close the issue on
   merge, which moves it to Done and skips Exly's check.
-- Open a PR only when asked. A person reviews and merges (squash). Never merge a
-  PR and never close an issue.
+- Open a PR only when asked. Only Exly accepts and merges PRs (squash). Never
+  merge a PR and never close an issue.
 - CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and
   `cargo test` in `server/` for every PR that touches it.
 
