@@ -47,8 +47,8 @@ git switch -c <area>-<issue>-<short-name> origin/main   # e.g. client-23-live-st
 ## 5. Build it
 
 - Make small commits, each with an imperative summary line and a body saying why.
-- End the commit that finishes the issue with `Closes #N`; use `Refs #N` when
-  something is left (see step 7).
+- Reference the issue as `Refs #N` in commits, never `Closes #N` (that would close
+  it on merge and skip Exly's review).
 - Stay in the issue's folder. Write down any change needed in someone else's folder for the PR.
 
 ## 6. Verify
@@ -69,7 +69,7 @@ your summary either way:
 ```markdown
 <one or two sentences: what this does and why>
 
-Closes #N    (or: Refs #N, if anything below is still open)
+Refs #N
 
 ## What changed
 - ...
@@ -86,5 +86,5 @@ Closes #N    (or: Refs #N, if anything below is still open)
 - `firmware/` (@SKIMOSK): ...
 ```
 
-Use `Closes` only when everything in the issue title is done, including the
-"Needs a person" items.
+Then move the issue to **In review** on the project board, or tell the user to
+if your tools can't. Only Exly moves it to Done.
