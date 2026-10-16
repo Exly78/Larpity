@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Larpity</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script type="module" src="dist/main.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <span class="brand">Larpity</span>
+      <span class="status" id="status"></span>
+    </header>
+
+    <section class="stage">
+      <!-- #22/#23 draw decoded frames here -->
+      <canvas id="video" width="1280" height="720"></canvas>
+      <p class="stage-msg" id="stage-msg"></p>
+      <!-- #24: iPhone only starts audio from a tap -->
+      <button class="listen" id="listen-btn" type="button"></button>
+    </section>
+
+    <!-- #26: filled from question_picked -->
+    <section class="banner" id="banner" hidden>
+      <span class="banner-label" id="banner-label"></span>
+      <p class="banner-text" id="banner-text"></p>
+    </section>
+
+    <!-- #25: chat messages the server sends back -->
+    <ul class="chat" id="chat"></ul>
+
+    <form class="composer" id="composer">
+      <input id="chat-input" type="text" maxlength="500" autocomplete="off" enterkeyhint="send" />
+      <button type="submit" id="send-btn"></button>
+    </form>
+  </div>
+</body>
+</html>

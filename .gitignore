@@ -15,3 +15,6 @@
 # Personal Claude Code notes and settings
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Client dependencies
+/client/node_modules/

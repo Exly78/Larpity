@@ -4,9 +4,21 @@
 
 Students open this on their own phones. Owners: katzow and PantedJeans71. Issues #21-#27.
 
-**Tooling isn't chosen yet.** #21 decides it ("plain HTML and TypeScript is
-enough"). Until then don't add a framework, bundler or `package.json` on your own.
-When #21 lands, replace this paragraph with the build and check commands.
+## Tooling
+
+Plain HTML, CSS and TypeScript, compiled by `tsc` alone: no framework, no bundler.
+Source is in `src/`; `tsc` writes `dist/`, which `index.html` loads as ES modules.
+**`dist/` is committed** so the server can serve this folder with no build step, so
+rebuild and commit it with every `src/` change.
+
+```sh
+npm install      # once, installs TypeScript
+npm run build    # src/*.ts -> dist/*.js
+npm run check    # type-check only (strict); run before every commit
+```
+
+Import other modules with a `.js` extension (`import { t } from "./strings.js"`):
+the browser loads `dist/` files directly. UI strings live in `src/strings.ts`.
 
 ## Rules
 
