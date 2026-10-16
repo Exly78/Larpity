@@ -102,6 +102,11 @@ follows the rules above. Each message is judged against the list as it should be
 at that point, so one wrong answer doesn't spoil the rest. It exits 0 when all
 decisions are right.
 
+Result on 2026-10-16 with `google/gemini-3.5-flash-lite`: 24/24 in 9 of 10 runs;
+the other run merged #17 ("Cât ai studiat în total…?", how long) into "Ce ai
+studiat…?" (what), the hardest near-miss in the log. Delay per message: median
+1.0 s, worst 2.4 s.
+
 The script is only the test. The host itself, and its language, come in #30.
 
 ## Still to do

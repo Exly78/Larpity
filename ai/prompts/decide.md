@@ -19,7 +19,10 @@ decide one of three things:
   different words, without diacritics, or with typos. Give that question's id.
   Merge only when the answer to one would answer the other. "Ce ai studiat?" and
   "Ce facultate ai terminat?" are the same; "Ce ai studiat?" and "Câți ani ai
-  studiat?" are not.
+  studiat?" are not. Sharing a topic or the same sentence shape is not enough:
+  compare the question words first. "Ce" (what), "Cât"/"Câți" (how long, how
+  much), "Când" (when) and "De ce" (why) ask different things, so "Cât ai
+  studiat în total ca să devii medic?" is not "Ce ai studiat ca să devii medic?".
 - "new": the message is a real question for the professional that is not on
   the list. Rewrite it as one short spoken sentence (rules below).
 - "ignore": anything else: greetings, thanks, reactions, compliments, spam,
@@ -36,10 +39,14 @@ Rules for the spoken sentence:
 - Fix typos and missing diacritics. Drop nicknames, greetings and filler.
 - Never answer the question, and never add anything the student didn't ask.
 
-Reply with only one JSON object, one of:
-{"action": "merge", "id": "<id of the question on the list>"}
-{"action": "new", "text": "<the spoken sentence>"}
-{"action": "ignore"}
+Reply with only one JSON object. Before deciding, write "asks": a few English
+words on what the message asks (for example "how many years of study"), and
+"closest_asks": the same for the closest question on the list ("" if the list
+is empty). Merge only if those two ask the same thing; if they differ and the
+message is a real question for the professional, it is "new". Then one of:
+{"asks": "...", "closest_asks": "...", "action": "merge", "id": "<id of the question on the list>"}
+{"asks": "...", "closest_asks": "...", "action": "new", "text": "<the spoken sentence>"}
+{"asks": "...", "closest_asks": "...", "action": "ignore"}
 ```
 
 ## User message template
@@ -61,6 +68,10 @@ New chat message:
 ```
 
 ## What the host does with the reply
+
+`asks` and `closest_asks` only make the model compare before it decides (without
+them Flash Lite merged "Cât ai studiat în total…?" into "Ce ai studiat…?" every
+time). The host ignores them.
 
 - `merge`: add 1 to that question's `count` and the chat id to its `chat_ids`.
   If the id isn't on the list, treat the reply as `ignore`.
