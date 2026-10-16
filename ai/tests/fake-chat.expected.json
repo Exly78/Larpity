@@ -1,0 +1,201 @@
+{
+  "about": "Expected result of feeding fake-chat.jsonl to the AI host in order. Ids are the test's own: t-1, t-2, ... in the order questions are added. 'decision' and 'id' must match exactly; the 'text' of a new question is one acceptable wording, and any wording that follows the rules in ../README.md passes.",
+  "decisions": [
+    {
+      "chat_id": 1,
+      "decision": "ignore",
+      "why": "greeting"
+    },
+    {
+      "chat_id": 2,
+      "decision": "new",
+      "id": "t-1",
+      "text": "Ce ai studiat ca să ajungi aici?"
+    },
+    {
+      "chat_id": 3,
+      "decision": "new",
+      "id": "t-2",
+      "text": "Cât durează de obicei o operație?",
+      "why": "no diacritics and no question mark, still a question"
+    },
+    {
+      "chat_id": 4,
+      "decision": "merge",
+      "id": "t-1",
+      "why": "the faculty you finished is what you studied"
+    },
+    {
+      "chat_id": 5,
+      "decision": "new",
+      "id": "t-3",
+      "text": "Cât câștigi pe lună?"
+    },
+    {
+      "chat_id": 6,
+      "decision": "ignore",
+      "why": "spam with a link"
+    },
+    {
+      "chat_id": 7,
+      "decision": "merge",
+      "id": "t-2"
+    },
+    {
+      "chat_id": 8,
+      "decision": "new",
+      "id": "t-4",
+      "text": "Îți e frică vreodată când operezi?"
+    },
+    {
+      "chat_id": 9,
+      "decision": "merge",
+      "id": "t-1"
+    },
+    {
+      "chat_id": 10,
+      "decision": "ignore",
+      "why": "gibberish"
+    },
+    {
+      "chat_id": 11,
+      "decision": "merge",
+      "id": "t-2",
+      "why": "greeting dropped; same question"
+    },
+    {
+      "chat_id": 12,
+      "decision": "ignore",
+      "why": "reaction"
+    },
+    {
+      "chat_id": 13,
+      "decision": "new",
+      "id": "t-5",
+      "text": "Câte ore lucrezi pe zi?"
+    },
+    {
+      "chat_id": 14,
+      "decision": "merge",
+      "id": "t-3",
+      "why": "asks about pay"
+    },
+    {
+      "chat_id": 15,
+      "decision": "merge",
+      "id": "t-4"
+    },
+    {
+      "chat_id": 16,
+      "decision": "ignore",
+      "why": "insult"
+    },
+    {
+      "chat_id": 17,
+      "decision": "new",
+      "id": "t-6",
+      "text": "Câți ani ai studiat ca să devii chirurg?",
+      "why": "how long you studied is not what you studied: must not merge into t-1"
+    },
+    {
+      "chat_id": 18,
+      "decision": "merge",
+      "id": "t-5"
+    },
+    {
+      "chat_id": 19,
+      "decision": "new",
+      "id": "t-7",
+      "text": "Ce mănânci la prânz în spital?"
+    },
+    {
+      "chat_id": 20,
+      "decision": "merge",
+      "id": "t-1"
+    },
+    {
+      "chat_id": 21,
+      "decision": "new",
+      "id": "t-8",
+      "text": "Poți să ne arăți instrumentele?",
+      "why": "a request phrased as a question counts"
+    },
+    {
+      "chat_id": 22,
+      "decision": "merge",
+      "id": "t-3"
+    },
+    {
+      "question_picked": "t-2",
+      "why": "removed from the list and added to the answered list"
+    },
+    {
+      "chat_id": 23,
+      "decision": "ignore",
+      "why": "thanks"
+    },
+    {
+      "chat_id": 24,
+      "decision": "ignore",
+      "why": "already answered (t-2)"
+    }
+  ],
+  "final_ranking": [
+    {
+      "id": "t-1",
+      "count": 4,
+      "chat_ids": [
+        2,
+        4,
+        9,
+        20
+      ]
+    },
+    {
+      "id": "t-3",
+      "count": 3,
+      "chat_ids": [
+        5,
+        14,
+        22
+      ]
+    },
+    {
+      "id": "t-4",
+      "count": 2,
+      "chat_ids": [
+        8,
+        15
+      ]
+    },
+    {
+      "id": "t-5",
+      "count": 2,
+      "chat_ids": [
+        13,
+        18
+      ]
+    },
+    {
+      "id": "t-6",
+      "count": 1,
+      "chat_ids": [
+        17
+      ]
+    },
+    {
+      "id": "t-7",
+      "count": 1,
+      "chat_ids": [
+        19
+      ]
+    },
+    {
+      "id": "t-8",
+      "count": 1,
+      "chat_ids": [
+        21
+      ]
+    }
+  ]
+}
