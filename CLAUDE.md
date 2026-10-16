@@ -44,13 +44,21 @@ its commands and rules; it loads when you touch files there.
 
 - Never commit to or push `main`. Branch from an up-to-date `origin/main`, named
   `<area>-<issue>-<short-name>`, e.g. `client-23-live-stream`.
-- Commits: an imperative summary line, then a body saying why. Reference the issue:
-  `Closes #N` only when everything in the issue title is done, including steps a
-  person must do (testing on phones, renting a server); otherwise `Refs #N`.
-- Open a PR only when asked. A person reviews and merges (squash). Never merge a
-  PR and never close issues by hand.
+- Commits: an imperative summary line, then a body saying why. Reference the
+  issue with `Refs #N`, never `Closes #N` / `Fixes #N`: those close the issue on
+  merge, which moves it to Done and skips Exly's check.
+- Open a PR only when asked. Only Exly accepts and merges PRs (squash). Never
+  merge a PR and never close an issue.
 - CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and
   `cargo test` in `server/` for every PR that touches it.
+
+## Issue status
+
+- **IMPORTANT:** When your work on an issue is finished (PR opened, or the work
+  handed over), move the issue to **In review** on the project board, every time.
+  If you can't change the board from your tools, tell the user to move it.
+- **Only Exly moves an issue to Done** (and closes it), after checking the work.
+  Never move an issue to Done or close it, even if the work looks complete or someone asks.
 
 ## Checking your work
 

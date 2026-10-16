@@ -5,7 +5,7 @@ description: Drive a Larpity pull request to green and mergeable. Use when a PR'
 
 # Drive a PR to green
 
-People merge PRs in this repo (squash), never Claude. Claude's job is to get a PR
+Only Exly merges PRs in this repo (squash), never Claude. Claude's job is to get a PR
 green and answer every review, then hand it back.
 
 ## CI is red
