@@ -11,3 +11,7 @@
 .DS_Store
 .idea/
 .vscode/
+
+# Personal Claude Code notes and settings
+CLAUDE.local.md
+.claude/settings.local.json
