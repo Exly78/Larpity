@@ -45,7 +45,9 @@ export class VideoPlayer {
         if (view.getUint8(0) !== KIND_VIDEO)
             return;
         const key = (view.getUint8(1) & 1) === 1;
-        if (!this.decoder)
+        // After a decode error the browser closes the decoder at once but calls the
+        // error callback later; decoding in between would throw.
+        if (this.decoder?.state !== "configured")
             return;
         if (this.decoder.decodeQueueSize > MAX_QUEUE) {
             if (!key) {
@@ -83,7 +85,14 @@ export class VideoPlayer {
             },
         });
         // Annex B: SPS and PPS ride inside every keyframe, so no `description`.
-        decoder.configure({ codec: this.codec, optimizeForLatency: true });
+        try {
+            decoder.configure({ codec: this.codec, optimizeForLatency: true });
+        }
+        catch {
+            // A malformed codec string throws here instead of calling `error`.
+            decoder.close();
+            return this.onError();
+        }
         this.decoder = decoder;
     }
     draw(frame) {
