@@ -43,8 +43,17 @@ function saveNick(nick: string): void {
 
 /** The nickname the server confirmed with `joined`, or null before joining. */
 let myNick: string | null = null;
-/** The nickname we asked for, re-sent on every reconnect. */
+/**
+ * The nickname the student typed, re-sent on every reconnect. Never the server's
+ * deduplicated "Ana2": asking for that would turn it into "Ana22" next time.
+ */
 let wantedNick: string | null = loadNick();
+/**
+ * True while a join with `wantedNick` is on its way and `joined` hasn't come back.
+ * The box stays in chat mode and sends nothing, so a half-typed message can't go
+ * out as a nickname. Starts true with a saved name: the first connect joins with it.
+ */
+let rejoining = wantedNick !== null;
 /** The last message sent, put back in the box if the server rejects it. */
 let lastSent = "";
 /** True while the box holds a nickname the user submitted and we wait for `joined`. */
@@ -98,13 +107,13 @@ function showError(text: string | null): void {
 
 /** The box asks for a nickname until the server confirms one, then sends chat. */
 function renderComposer(): void {
-  const joined = myNick !== null;
+  const joined = myNick !== null || rejoining;
   input.placeholder = joined ? t.chatPlaceholder : t.nickPlaceholder;
   input.maxLength = joined ? MAX_TEXT_CHARS : MAX_NICK_CHARS;
   input.enterKeyHint = joined ? "send" : "go";
   sendBtn.textContent = joined ? t.send : t.join;
   $("me").hidden = !joined;
-  $("me-nick").textContent = myNick ?? "";
+  $("me-nick").textContent = myNick ?? wantedNick ?? "";
 }
 
 // --- Server messages ---
@@ -119,8 +128,10 @@ function onMessage(msg: ServerMessage): void {
       break;
     case "joined":
       myNick = msg.nick;
-      wantedNick = msg.nick;
-      saveNick(msg.nick);
+      rejoining = false;
+      // Keep asking for "Ana", not "Ana2": the server may still hold our old
+      // connection after a network switch, and adds a digit to whatever we ask for.
+      if (wantedNick) saveNick(wantedNick);
       // Clear the nickname out of the box, but not text typed while reconnecting.
       if (nickInBox) input.value = "";
       nickInBox = false;
@@ -133,6 +144,7 @@ function onMessage(msg: ServerMessage): void {
     case "error":
       if (msg.code === "join_required" || msg.code === "bad_nick") {
         myNick = null;
+        rejoining = false;
         // Don't retry a rejected nickname on the next reconnect.
         if (msg.code === "bad_nick") wantedNick = loadNick();
         renderComposer();
@@ -150,9 +162,12 @@ const conn = new Connection({
     // The server replays everything, so start clean.
     clearChat();
     setLive(false);
+    // Don't rejoin over a nickname the student is typing after "Schimbă".
+    const choosingNick = myNick === null && !rejoining && !nickInBox;
     myNick = null;
+    rejoining = wantedNick !== null && !choosingNick;
     renderComposer();
-    if (wantedNick) conn.send({ type: "join", nick: wantedNick });
+    if (rejoining && wantedNick) conn.send({ type: "join", nick: wantedNick });
   },
   onClose() {
     setStatus(t.connecting, false);
@@ -166,11 +181,20 @@ $<HTMLFormElement>("composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (text === "") return;
+  if (rejoining) {
+    showError(t.connecting);
+    return;
+  }
 
   if (myNick === null) {
+    // Only remember the name once it's sent, so a failed send can't become the
+    // nickname we rejoin with.
+    if (!conn.send({ type: "join", nick: text })) {
+      showError(t.connecting);
+      return;
+    }
     wantedNick = text;
     nickInBox = true;
-    if (!conn.send({ type: "join", nick: text })) showError(t.connecting);
     return;
   }
   if (!conn.send({ type: "chat", text })) {
@@ -183,6 +207,10 @@ $<HTMLFormElement>("composer").addEventListener("submit", (e) => {
 });
 
 $("change-nick").addEventListener("click", () => {
+  if (rejoining) {
+    showError(t.connecting);
+    return;
+  }
   myNick = null;
   renderComposer();
   input.value = wantedNick ?? "";
