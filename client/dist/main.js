@@ -135,6 +135,8 @@ function onMessage(msg) {
             if (msg.code === "join_required" || msg.code === "bad_nick") {
                 myNick = null;
                 rejoining = false;
+                // The box now holds a name to fix, not one waiting for `joined`.
+                nickInBox = false;
                 // Don't retry a rejected nickname on the next reconnect.
                 if (msg.code === "bad_nick")
                     wantedNick = loadNick();
