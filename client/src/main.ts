@@ -1,7 +1,8 @@
-// The viewer page. Chat (#25) is live; video (#22/#23), audio (#24) and the
+// The viewer page. Chat (#25) and video (#23) are live; audio (#24) and the
 // "being answered" banner (#26) plug into the message handler below.
 import { Connection, type ServerMessage } from "./connection.js";
 import { errorText, t, unknownError } from "./strings.js";
+import { VideoPlayer, videoSupported } from "./video.js";
 
 // PROTOCOL.md chat rules.
 const MAX_NICK_CHARS = 24;
@@ -58,9 +59,14 @@ function setStatus(text: string, live: boolean): void {
   status.classList.toggle("live", live);
 }
 
+function setStageMsg(text: string): void {
+  $("stage-msg").textContent = text;
+}
+
 function setLive(live: boolean): void {
   setStatus(live ? t.live : t.offline, live);
-  $("stage-msg").textContent = live ? "" : t.waitingForStream;
+  if (!videoSupported()) return setStageMsg(t.videoUnsupported);
+  setStageMsg(live ? t.loadingVideo : t.waitingForStream);
 }
 
 function clearChat(): void {
@@ -113,9 +119,11 @@ function onMessage(msg: ServerMessage): void {
   switch (msg.type) {
     case "config":
       setLive(true);
+      video?.configure(msg.video.codec);
       break;
     case "offline":
       setLive(false);
+      video?.reset();
       break;
     case "joined":
       myNick = msg.nick;
@@ -145,11 +153,22 @@ function onMessage(msg: ServerMessage): void {
   }
 }
 
+// --- Video ---
+
+const video = videoSupported()
+  ? new VideoPlayer(
+      $<HTMLCanvasElement>("video"),
+      () => setStageMsg(""),
+      () => setStageMsg(t.videoError),
+    )
+  : null;
+
 const conn = new Connection({
   onOpen() {
     // The server replays everything, so start clean.
     clearChat();
     setLive(false);
+    video?.reset();
     myNick = null;
     renderComposer();
     if (wantedNick) conn.send({ type: "join", nick: wantedNick });
@@ -158,6 +177,9 @@ const conn = new Connection({
     setStatus(t.connecting, false);
   },
   onMessage,
+  onBinary(data) {
+    video?.push(data);
+  },
 });
 
 // --- Input ---
@@ -195,6 +217,6 @@ $("banner-label").textContent = t.beingAnswered;
 $("me-label").textContent = t.writingAs;
 $("change-nick").textContent = t.changeNick;
 setStatus(t.connecting, false);
-$("stage-msg").textContent = t.waitingForStream;
+setStageMsg(videoSupported() ? t.waitingForStream : t.videoUnsupported);
 clearChat();
 renderComposer();

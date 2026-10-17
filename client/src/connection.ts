@@ -3,7 +3,7 @@
 // so `onOpen` is where the page resets to a clean state.
 
 export type ServerMessage =
-  | { type: "config" }
+  | { type: "config"; video: { codec: string } }
   | { type: "offline" }
   | { type: "joined"; nick: string }
   | { type: "chat"; id: number; nick: string; text: string; ts: number }
