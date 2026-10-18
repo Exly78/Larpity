@@ -93,6 +93,29 @@ body {
 .chat li { line-height: 1.35; overflow-wrap: anywhere; }
 .chat .nick { font-weight: 700; margin-right: 6px; }
 .chat .empty { color: var(--muted); text-align: center; margin-top: 16px; }
+.chat .mine .nick { color: var(--accent); }
+
+.chat-error {
+  padding: 8px 16px;
+  font-size: 14px;
+  color: #fff;
+  background: #8a1f2b;
+  flex-shrink: 0;
+}
+
+.me {
+  padding: 6px 16px 0;
+  font-size: 13px;
+  color: var(--muted);
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+}
+.me strong { color: var(--text); }
+.me button {
+  border: 0; background: none; padding: 4px 6px;
+  font: inherit; color: var(--accent); text-decoration: underline;
+}
+.me:not([hidden]) + .composer { border-top: 0; }
 
 .composer {
   display: flex;
