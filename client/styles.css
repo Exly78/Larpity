@@ -77,6 +77,8 @@ body {
   color: var(--banner-text);
   padding: 10px 16px;
   flex-shrink: 0;
+  /* Tappable (see main.ts); older iPhone Safari only sends clicks to elements that look it. */
+  cursor: pointer;
 }
 .banner-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .banner-text {
