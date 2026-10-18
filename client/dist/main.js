@@ -1,5 +1,5 @@
-// The viewer page. Chat (#25) and video (#23) are live; audio (#24) and the
-// "being answered" banner (#26) plug into the message handler below.
+// The viewer page. Chat (#25), video (#23) and the "being answered" banner (#26)
+// are live; audio (#24) plugs into the message handler below.
 import { Connection } from "./connection.js";
 import { errorText, t, unknownError } from "./strings.js";
 import { VideoPlayer, videoSupported } from "./video.js";
@@ -19,6 +19,8 @@ const chatList = $("chat");
 const input = $("chat-input");
 const sendBtn = $("send-btn");
 const errorLine = $("chat-error");
+const banner = $("banner");
+const bannerText = $("banner-text");
 // --- Saved nickname (so a reload or reconnect joins again without asking) ---
 function loadNick() {
     try {
@@ -54,6 +56,10 @@ let rejoining = wantedNick !== null;
 let lastSent = "";
 /** True while the box holds a nickname the user submitted and we wait for `joined`. */
 let nickInBox = false;
+/** True between `config` and `offline`. */
+let isLive = false;
+/** The text of the last `question_picked`, or null if none has come since connecting. */
+let pickedText = null;
 // --- Rendering ---
 function setStatus(text, live) {
     const status = $("status");
@@ -64,10 +70,20 @@ function setStageMsg(text) {
     $("stage-msg").textContent = text;
 }
 function setLive(live) {
+    isLive = live;
+    renderBanner();
     setStatus(live ? t.live : t.offline, live);
     if (!videoSupported())
         return setStageMsg(t.videoUnsupported);
     setStageMsg(live ? t.loadingVideo : t.waitingForStream);
+}
+/**
+ * Shows the question the professional is answering. Only while live: the server
+ * keeps the last pick after the phone leaves, but then nobody is answering it.
+ */
+function renderBanner() {
+    banner.hidden = !isLive || pickedText === null;
+    bannerText.textContent = pickedText ?? "";
 }
 function clearChat() {
     const li = document.createElement("li");
@@ -139,6 +155,12 @@ function onMessage(msg) {
         case "chat":
             addChat(msg.nick, msg.text);
             break;
+        case "question_picked":
+            pickedText = msg.text;
+            // A new question starts clamped, even if the last one was opened up.
+            banner.classList.remove("open");
+            renderBanner();
+            break;
         case "error":
             if (msg.code === "join_required" || msg.code === "bad_nick") {
                 myNick = null;
@@ -165,6 +187,7 @@ const conn = new Connection({
     onOpen() {
         // The server replays everything, so start clean.
         clearChat();
+        pickedText = null;
         setLive(false);
         video?.reset();
         // Don't rejoin over a nickname the student is typing after "Schimbă".
@@ -223,6 +246,8 @@ $("change-nick").addEventListener("click", () => {
     input.focus();
     input.select();
 });
+// Long questions are cut to three lines so the chat keeps its room; a tap shows all of it.
+banner.addEventListener("click", () => banner.classList.toggle("open"));
 $("listen-btn").textContent = t.tapToListen;
 $("banner-label").textContent = t.beingAnswered;
 $("me-label").textContent = t.writingAs;

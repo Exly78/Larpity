@@ -7,8 +7,9 @@ export type ServerMessage =
   | { type: "offline" }
   | { type: "joined"; nick: string }
   | { type: "chat"; id: number; nick: string; text: string; ts: number }
+  | { type: "question_picked"; id: string; text: string }
   | { type: "error"; code: string; message?: string };
-// Other types (questions, question_picked, ...) also arrive; handlers ignore what they don't know.
+// Other types (questions, ...) also arrive; handlers ignore what they don't know.
 
 export type Handlers = {
   onOpen(): void;
