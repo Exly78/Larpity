@@ -6,9 +6,9 @@ const KIND_AUDIO = 2;
 // the sound. The picture runs this much ahead, which is hard to notice: the one
 // talking is the professional, behind the camera.
 const LEAD_S = 0.25;
-// If more than this is queued (a burst after a stall, a slow phone), drop frames
-// to stay live instead of falling further behind.
-const MAX_AHEAD_S = 1;
+// If more than this is queued (a burst after a stall), drop frames to stay live.
+// Live sound can't catch up, so whatever is queued stays as delay behind the picture.
+const MAX_AHEAD_S = 0.5;
 export function audioSupported() {
     return typeof AudioContext !== "undefined";
 }
@@ -19,7 +19,11 @@ export class AudioPlayer {
         this.ctx = null;
         /** From `config`; null while offline or when the stream has no audio we can play. */
         this.sampleRate = null;
-        /** When the next frame starts, on the `ctx.currentTime` clock; 0 = start fresh. */
+        /**
+         * When the next frame starts, on the `ctx.currentTime` clock. Never reset by
+         * hand: frames already queued keep playing, and starting new ones earlier would
+         * play both at once. Once it falls behind the clock, `push` starts afresh.
+         */
         this.nextTime = 0;
         button.addEventListener("click", () => this.start());
         this.render();
@@ -28,13 +32,11 @@ export class AudioPlayer {
     configure(audio) {
         const ok = audio?.codec === "pcm16" && audio.channels === 1 && audio.sample_rate > 0;
         this.sampleRate = ok ? audio.sample_rate : null;
-        this.nextTime = 0;
         this.render();
     }
     /** On `offline` or a new connection: nothing to play until the next `config`. */
     reset() {
         this.sampleRate = null;
-        this.nextTime = 0;
         this.render();
     }
     /** A binary message from the socket. Ignores anything that isn't audio. */
@@ -49,7 +51,7 @@ export class AudioPlayer {
         if (view.getUint8(0) !== KIND_AUDIO)
             return;
         const now = ctx.currentTime;
-        if (this.nextTime < now)
+        if (this.nextTime <= now)
             this.nextTime = now + LEAD_S; // first frame, or we ran dry
         else if (this.nextTime - now > MAX_AHEAD_S)
             return;
@@ -68,7 +70,8 @@ export class AudioPlayer {
     /** The button's tap. iPhone only lets an AudioContext start inside a tap handler. */
     start() {
         if (!this.ctx) {
-            // Without this, iPhone mutes Web Audio when the ringer switch is on silent (Safari 16.4+).
+            // iPhone mutes Web Audio when the ringer switch is on silent, unless the page
+            // asks for a "playback" audio session (newer Safari only).
             const session = navigator.audioSession;
             if (session)
                 session.type = "playback";
@@ -78,7 +81,6 @@ export class AudioPlayer {
         }
         // Refused outside a tap; the button then stays up for another try.
         this.ctx.resume().catch(() => { });
-        this.nextTime = 0;
         this.render();
     }
     render() {
