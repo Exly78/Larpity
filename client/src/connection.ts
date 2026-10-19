@@ -2,8 +2,10 @@
 // 10 s). The server replays config, frames, chat and questions on every connect,
 // so `onOpen` is where the page resets to a clean state.
 
+import type { AudioConfig } from "./audio.js";
+
 export type ServerMessage =
-  | { type: "config"; video: { codec: string } }
+  | { type: "config"; video: { codec: string }; audio?: AudioConfig | null }
   | { type: "offline" }
   | { type: "joined"; nick: string }
   | { type: "chat"; id: number; nick: string; text: string; ts: number }

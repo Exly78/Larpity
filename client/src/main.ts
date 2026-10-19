@@ -1,5 +1,6 @@
-// The viewer page. Chat (#25), video (#23) and the "being answered" banner (#26)
-// are live; audio (#24) plugs into the message handler below.
+// The viewer page: chat (#25), video (#23), audio (#24) and the "being answered"
+// banner (#26).
+import { AudioPlayer, audioSupported } from "./audio.js";
 import { Connection, type ServerMessage } from "./connection.js";
 import { errorText, t, unknownError } from "./strings.js";
 import { VideoPlayer, videoSupported } from "./video.js";
@@ -146,10 +147,12 @@ function onMessage(msg: ServerMessage): void {
     case "config":
       setLive(true);
       video?.configure(msg.video.codec);
+      audio?.configure(msg.audio);
       break;
     case "offline":
       setLive(false);
       video?.reset();
+      audio?.reset();
       break;
     case "joined":
       myNick = msg.nick;
@@ -200,6 +203,11 @@ const video = videoSupported()
     )
   : null;
 
+// --- Audio ---
+
+// Works even where video doesn't, so those students can still listen.
+const audio = audioSupported() ? new AudioPlayer($<HTMLButtonElement>("listen-btn")) : null;
+
 const conn = new Connection({
   onOpen() {
     // The server replays everything, so start clean.
@@ -207,6 +215,7 @@ const conn = new Connection({
     pickedText = null;
     setLive(false);
     video?.reset();
+    audio?.reset();
     // Don't rejoin over a nickname the student is typing after "Schimbă".
     const choosingNick = myNick === null && !rejoining && !nickInBox;
     myNick = null;
@@ -220,6 +229,7 @@ const conn = new Connection({
   onMessage,
   onBinary(data) {
     video?.push(data);
+    audio?.push(data);
   },
 });
 
