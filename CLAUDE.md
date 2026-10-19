@@ -50,7 +50,9 @@ its commands and rules; it loads when you touch files there.
 - Open a PR only when asked. Only Exly accepts and merges PRs (squash). Never
   merge a PR and never close an issue.
 - CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and
-  `cargo test` in `server/` for every PR that touches it.
+  `cargo test` in `server/` for every PR that touches it, and `npm run check`,
+  `npm run build` and a check that the committed `dist/` is up to date in
+  `client/` for every PR that touches that.
 
 ## Issue status
 
