@@ -20,7 +20,8 @@ const USAGE: &str = "usage: fake-viewers [options]
   --count N        viewers to open (default 10)
   --minutes M      how long to watch (default 1)
   --seconds S      same, in seconds, for short runs
-  --chat-every S   seconds between chat messages per viewer (default 20; 0 = never)
+  --chat-every S   seconds between chat messages per viewer (default 20; 0 = never;
+                   the server allows one per second per viewer)
   --json           print only the one-line JSON summary";
 
 /// A video timestamp jump longer than this counts as a gap (a lag skip or a stall).
@@ -224,6 +225,8 @@ async fn watch(url: &str, number: usize, chat_every: Option<Duration>, deadline:
                                     pending_chat = None;
                                 }
                             }
+                            // Sent faster than the server allows: not lost, just refused.
+                            Some("error") if value["code"] == "rate_limited" => pending_chat = None,
                             // A new stream: timestamps start over, so don't count the jump as a gap.
                             Some("config") | Some("offline") => last_video_ts = None,
                             _ => {}
