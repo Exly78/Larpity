@@ -55,8 +55,12 @@ pub struct AppState {
 pub fn router(config: Config) -> Router {
     let client = static_files(&config.client_dir);
     let firmware = static_files(&config.firmware_dir);
+    let hub = match &config.record_dir {
+        Some(dir) => Hub::new().logging_to(dir.clone()),
+        None => Hub::new(),
+    };
     let state = AppState {
-        hub: Arc::new(Hub::new()),
+        hub: Arc::new(hub),
         config: Arc::new(config),
     };
     Router::new()

@@ -20,6 +20,7 @@ use tracing::warn;
 use crate::{
     chat::{HISTORY, Nicknames},
     protocol::{ChatMessage, FrameKind, Question, ServerMessage, StreamConfig, encode_frame},
+    recording::{EventLog, LogFile},
 };
 
 /// How many events a viewer may fall behind before it skips ahead (~8 s of stream).
@@ -47,6 +48,8 @@ pub struct Hub {
     inner: Mutex<Inner>,
     viewers: broadcast::Sender<ViewerEvent>,
     started: Instant,
+    /// The chat and questions log, when recording is on.
+    log: Option<EventLog>,
 }
 
 #[derive(Default)]
@@ -142,6 +145,26 @@ impl Hub {
             inner: Mutex::default(),
             viewers: broadcast::channel(VIEWER_BACKLOG).0,
             started: Instant::now(),
+            log: None,
+        }
+    }
+
+    /// Keeps a log of the chat and the questions in `dir`, next to the recordings.
+    pub fn logging_to(mut self, dir: PathBuf) -> Self {
+        self.log = Some(EventLog::spawn(dir));
+        self
+    }
+
+    fn log(&self, file: LogFile, line: &str) {
+        if let Some(log) = &self.log {
+            log.log(file, line.to_owned());
+        }
+    }
+
+    /// A `questions` or `question_picked` message with the time added, for the log.
+    fn log_question_event(&self, message: &ServerMessage<'_>) {
+        if self.log.is_some() {
+            self.log(LogFile::Questions, &stamped(message));
         }
     }
 
@@ -311,6 +334,7 @@ impl Hub {
             ts: unix_millis(),
         };
         let text = ServerMessage::Chat(&message).to_text();
+        self.log(LogFile::Chat, &text);
         if let Some(ai) = &inner.ai {
             let _ = ai.tx.try_send(Message::Text(text.clone()));
         }
@@ -364,12 +388,11 @@ impl Hub {
             questions, answered, ..
         } = &mut *inner;
         questions.retain(|q| !answered.contains(&q.id));
-        self.broadcast(ViewerEvent::Text(
-            ServerMessage::Questions {
-                questions: &inner.questions,
-            }
-            .to_text(),
-        ));
+        let message = ServerMessage::Questions {
+            questions: &inner.questions,
+        };
+        self.log_question_event(&message);
+        self.broadcast(ViewerEvent::Text(message.to_text()));
     }
 
     pub fn add_speech(&self, session: u64, question_id: String, speech: Speech) {
@@ -417,16 +440,16 @@ impl Hub {
         }
 
         let picked = picked_message(&question);
+        self.log_question_event(&for_others(&question));
         if let Some(ai) = &inner.ai {
             let _ = ai.tx.try_send(Message::Text(picked.clone()));
         }
         self.broadcast(ViewerEvent::Text(picked));
-        self.broadcast(ViewerEvent::Text(
-            ServerMessage::Questions {
-                questions: &inner.questions,
-            }
-            .to_text(),
-        ));
+        let remaining = ServerMessage::Questions {
+            questions: &inner.questions,
+        };
+        self.log_question_event(&remaining);
+        self.broadcast(ViewerEvent::Text(remaining.to_text()));
 
         inner.answered.insert(question.id.clone());
         if inner.picked.len() == HISTORY {
@@ -438,14 +461,32 @@ impl Hub {
 }
 
 /// `question_picked` as viewers and the AI host get it.
-fn picked_message(question: &Question) -> Utf8Bytes {
+fn for_others(question: &Question) -> ServerMessage<'_> {
     ServerMessage::QuestionPicked {
         id: &question.id,
         text: &question.text,
         audio: None,
         format: None,
     }
-    .to_text()
+}
+
+fn picked_message(question: &Question) -> Utf8Bytes {
+    for_others(question).to_text()
+}
+
+/// The message as JSON with `"ts"` (Unix ms) in front, for the questions log.
+fn stamped(message: &ServerMessage<'_>) -> String {
+    #[derive(serde::Serialize)]
+    struct Stamped<'a> {
+        ts: u64,
+        #[serde(flatten)]
+        message: &'a ServerMessage<'a>,
+    }
+    serde_json::to_string(&Stamped {
+        ts: unix_millis(),
+        message,
+    })
+    .expect("server messages always serialize")
 }
 
 fn unix_micros() -> u64 {
