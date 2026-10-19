@@ -110,6 +110,29 @@ served.
 the queue the button picks from; `picked` and `chat_messages` count since the
 server started. The page needs no token: it holds nothing secret.
 
+## Load test with fake viewers
+
+`fake-viewers` opens many viewer connections at once, each joining with a
+nickname, chatting now and then and counting what it receives. Run it from a
+laptop against the VPS while the fake phone (or the real one) streams:
+
+```sh
+cargo run --release --bin fake-viewers -- --url wss://larpity.yourdomain.ro/ws/viewer --count 25 --minutes 30
+```
+
+It prints a table per viewer and one line of JSON for the write-up:
+
+```json
+{"viewers":25,"connected":25,"seconds":1800,"video_fps":15.0,"kbit_s":1790,
+ "first_keyframe_ms":{"median":120,"max":480},"gaps":0,
+ "chat_rtt_ms":{"median":45,"max":300},"chat_lost":0,"disconnects":0,"connect_failures":0}
+```
+
+`video_fps` and `kbit_s` are per viewer. A `gap` is a jump of more than 0.5 s
+in the video timestamps, which is what a viewer that fell behind and skipped
+to the next keyframe sees. `--chat-every 0` turns the chat off. It exits 1 if
+a viewer never connected.
+
 ## Test without the AI host
 
 `stub-ai` is a stand-in AI host: every chat message with a `?` becomes a
