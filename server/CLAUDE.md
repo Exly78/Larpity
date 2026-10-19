@@ -2,8 +2,8 @@
 
 @../PROTOCOL.md
 
-Rust 2024 with axum 0.8 and tokio. One crate, three binaries: `larpity-server`
-(the default for `cargo run`), `fake-phone` and `stub-ai`. `README.md` lists the
+Rust 2024 with axum 0.8 and tokio. One crate, four binaries: `larpity-server`
+(the default for `cargo run`), `fake-phone`, `fake-viewers` and `stub-ai`. `README.md` lists the
 env vars and endpoints; `deploy/README.md` covers the VPS.
 
 ## Commands (from `server/`)
