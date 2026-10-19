@@ -77,6 +77,12 @@ phone dropped frames, sound and picture drift apart over a long recording.
 | `/` | the viewer page |
 | `/health` | returns `ok` |
 
+The two pages are served with `Cache-Control: no-cache`, so browsers check for
+a new version on every load (one small request per file, thanks to the ETag)
+and a deploy reaches every viewer at once. `CLAUDE.md`, `README.md`,
+`package.json`, `tsconfig.json`, `src/` and dotfiles in those folders are not
+served.
+
 ## Test without the AI host
 
 `stub-ai` is a stand-in AI host: every chat message with a `?` becomes a

@@ -9,7 +9,11 @@ use larpity_server::{
     protocol::{FrameKind, encode_frame},
 };
 use serde_json::Value;
-use tokio::{net::TcpListener, net::TcpStream, time::timeout};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    time::timeout,
+};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 
 pub type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -114,4 +118,69 @@ pub async fn live_stream(addr: SocketAddr) -> (Ws, Ws) {
     send_json(&mut phone, config_message()).await;
     expect_type(&mut viewer, "config").await;
     (phone, viewer)
+}
+
+/// A plain HTTP response: status, headers (names lowercased) and body.
+pub struct HttpResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+}
+
+impl HttpResponse {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
+    }
+
+    pub fn json(&self) -> Value {
+        serde_json::from_slice(&self.body).expect("body is JSON")
+    }
+}
+
+/// `GET path` over a fresh TCP connection, with no HTTP client in the way.
+pub async fn http_get(addr: SocketAddr, path: &str) -> HttpResponse {
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    stream
+        .write_all(format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").as_bytes())
+        .await
+        .unwrap();
+    let mut raw = Vec::new();
+    timeout(WAIT, stream.read_to_end(&mut raw)).await.unwrap().unwrap();
+    let end = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .expect("no end of headers");
+    let head = std::str::from_utf8(&raw[..end]).unwrap();
+    let mut lines = head.lines();
+    let status = lines
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .nth(1)
+        .unwrap()
+        .parse()
+        .unwrap();
+    let headers = lines
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
+        .collect();
+    HttpResponse {
+        status,
+        headers,
+        body: raw[end + 4..].to_vec(),
+    }
+}
+
+/// A fresh empty directory under the system temp dir.
+pub fn scratch_dir(name: &str) -> std::path::PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!("larpity-{name}-{nanos}"));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
 }
