@@ -1,0 +1,33 @@
+name: client
+
+on:
+  push:
+    branches: [main]
+    paths: ["client/**", ".github/workflows/client.yml"]
+  pull_request:
+    paths: ["client/**", ".github/workflows/client.yml"]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+      - run: npm run build
+      # dist/ is committed so the server can serve it with no build step, so a
+      # src/ change must come with its rebuilt dist/.
+      - name: dist/ is up to date
+        run: |
+          if [ -n "$(git status --porcelain -- dist/)" ]; then
+            echo "dist/ is out of date: run 'npm run build' in client/ and commit the result"
+            git status --porcelain -- dist/
+            git --no-pager diff -- dist/
+            exit 1
+          fi
