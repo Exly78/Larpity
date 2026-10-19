@@ -57,6 +57,12 @@ The token is in `/etc/larpity.env`.
 
 Check it is up with `curl https://larpity.yourdomain.ro/health`, which returns `ok`.
 
+## On the day
+
+[`RUNBOOK.md`](RUNBOOK.md) is the checklist for a real session: recording on,
+the real AI host in, what to do when something drops, and what to copy off
+afterwards.
+
 ## Day to day
 
 ```sh
