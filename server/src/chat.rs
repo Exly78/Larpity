@@ -1,6 +1,10 @@
 //! Chat rules: what makes a valid nickname or message, and how taken nicknames get a number.
 
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    hash::{BuildHasher, RandomState},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 pub const MAX_NICK_CHARS: usize = 24;
 pub const MAX_TEXT_CHARS: usize = 200;
@@ -32,6 +36,16 @@ pub fn clean(raw: &str, max_chars: usize) -> Option<String> {
 fn is_invisible(c: char) -> bool {
     (c.is_control() && !c.is_whitespace())
         || matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}')
+}
+
+/// A key a viewer can show to get its nickname back after a reconnect: 32 hex
+/// characters nobody else can guess. It guards a nickname, not a secret, so the
+/// standard library's randomly keyed hasher is enough and no crate is needed.
+pub fn fresh_key() -> String {
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let a = RandomState::new().hash_one(nanos);
+    let b = RandomState::new().hash_one((nanos, a));
+    format!("{a:016x}{b:016x}")
 }
 
 /// Nicknames in use, compared without case.
@@ -83,6 +97,16 @@ mod tests {
         assert!(clean_nick(&"ă".repeat(24)).is_some());
         assert!(clean_text(&"x".repeat(200)).is_some());
         assert_eq!(clean_text(&"x".repeat(201)), None);
+    }
+
+    #[test]
+    fn keys_are_long_hex_and_differ() {
+        let keys: HashSet<String> = (0..100).map(|_| fresh_key()).collect();
+        assert_eq!(keys.len(), 100);
+        for key in &keys {
+            assert_eq!(key.len(), 32);
+            assert!(key.bytes().all(|b| b.is_ascii_hexdigit()));
+        }
     }
 
     #[test]

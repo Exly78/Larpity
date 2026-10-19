@@ -18,7 +18,7 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::warn;
 
 use crate::{
-    chat::{HISTORY, Nicknames},
+    chat::{HISTORY, Nicknames, fresh_key},
     protocol::{ChatMessage, FrameKind, Question, ServerMessage, StreamConfig, encode_frame},
     recording::{EventLog, LogFile},
 };
@@ -67,6 +67,10 @@ struct Inner {
     next_chat_id: u64,
     history: VecDeque<ChatMessage>,
     nicknames: Nicknames,
+    /// Each joined viewer's nickname and key, by session.
+    claims: HashMap<u64, Claim>,
+    /// Which session a key belongs to.
+    keys: HashMap<String, u64>,
     ai: Option<Slot>,
     /// The AI host's latest ranking, best first.
     questions: Vec<Question>,
@@ -79,6 +83,16 @@ struct Inner {
     last_pick: Option<Instant>,
     /// The last pick, if it went to the phone without speech: its id and when.
     awaiting_speech: Option<(String, Instant)>,
+}
+
+impl Inner {
+    /// Frees a viewer's nickname and key; returns the claim, if there was one.
+    fn release_claim(&mut self, session: u64) -> Option<Claim> {
+        let claim = self.claims.remove(&session)?;
+        self.nicknames.release(&claim.nick);
+        self.keys.remove(&claim.key);
+        Some(claim)
+    }
 }
 
 /// What a button press did.
@@ -125,6 +139,12 @@ pub struct Status {
     pub picked: usize,
     /// Chat messages since the server started.
     pub chat_messages: u64,
+}
+
+/// A viewer's nickname, and the key that gets it back after a reconnect.
+struct Claim {
+    nick: String,
+    key: String,
 }
 
 /// The connection currently acting as the phone or the AI host.
@@ -289,9 +309,12 @@ impl Hub {
         }
     }
 
-    /// What a new viewer needs to catch up, plus the live feed from that point on.
-    pub fn join_viewer(&self) -> (Vec<ViewerEvent>, broadcast::Receiver<ViewerEvent>) {
-        let inner = self.lock();
+    /// What a new viewer needs to catch up, plus the live feed from that point on,
+    /// and the viewer's session id.
+    pub fn join_viewer(&self) -> (u64, Vec<ViewerEvent>, broadcast::Receiver<ViewerEvent>) {
+        let mut inner = self.lock();
+        inner.next_session += 1;
+        let session = inner.next_session;
         let mut snapshot = Vec::with_capacity(1 + inner.gop.len());
         match &inner.stream {
             Some(config) => {
@@ -320,29 +343,50 @@ impl Hub {
         if let Some(current) = inner.picked.back() {
             snapshot.push(ViewerEvent::Text(picked_message(current)));
         }
-        (snapshot, self.viewers.subscribe())
+        (session, snapshot, self.viewers.subscribe())
     }
 
-    /// Reserves a nickname (adding a number if it is taken) and frees the viewer's old one.
-    pub fn claim_nick(&self, wanted: &str, previous: Option<&str>) -> String {
+    /// Gives the viewer a nickname (with a number added if it is taken) and the
+    /// key that keeps it. The viewer's own earlier nickname is freed first (a
+    /// change of name), and so is the one held by `key`'s connection, if that is
+    /// another session (a reconnect taking its name back).
+    pub fn claim_nick(&self, session: u64, wanted: &str, key: Option<&str>) -> (String, String) {
         let mut inner = self.lock();
-        if let Some(previous) = previous {
-            inner.nicknames.release(previous);
+        if let Some(old) = key.and_then(|key| inner.keys.get(key).copied())
+            && old != session
+        {
+            inner.release_claim(old);
         }
-        inner.nicknames.claim(wanted)
+        let key = inner.release_claim(session).map_or_else(fresh_key, |claim| claim.key);
+        let nick = inner.nicknames.claim(wanted);
+        inner.keys.insert(key.clone(), session);
+        inner.claims.insert(
+            session,
+            Claim {
+                nick: nick.clone(),
+                key: key.clone(),
+            },
+        );
+        (nick, key)
     }
 
-    pub fn release_nick(&self, nick: &str) {
-        self.lock().nicknames.release(nick);
+    /// The viewer left: its nickname is free again and its key forgotten.
+    pub fn leave_viewer(&self, session: u64) {
+        self.lock().release_claim(session);
     }
 
-    /// Sends a chat message to every viewer and keeps it for late joiners.
-    pub fn post_chat(&self, nick: &str, text: String) {
+    /// Sends a chat message from this viewer to everyone and keeps it for late
+    /// joiners. `false` if the viewer has no nickname (never joined, or another
+    /// connection took its name back with the key).
+    pub fn post_chat(&self, session: u64, text: String) -> bool {
         let mut inner = self.lock();
+        let Some(nick) = inner.claims.get(&session).map(|claim| claim.nick.clone()) else {
+            return false;
+        };
         inner.next_chat_id += 1;
         let message = ChatMessage {
             id: inner.next_chat_id,
-            nick: nick.to_owned(),
+            nick,
             text,
             ts: unix_millis(),
         };
@@ -356,6 +400,7 @@ impl Hub {
             inner.history.pop_front();
         }
         inner.history.push_back(message);
+        true
     }
 
     /// Makes this connection the AI host, replacing any earlier one, and queues
