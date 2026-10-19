@@ -126,8 +126,15 @@ Plus binary video (`kind` 1) and audio (`kind` 2) frames.
 ```
 
 When `audio` is `true`, a speech frame (`kind` 3) follows right after. When it
-is `false` the AI hasn't finished the speech yet; the phone can show the text on
+is `false` the AI hasn't finished the speech yet; the phone shows the text on
 screen instead.
+
+If that speech arrives within **10 seconds** of the press, the server sends
+`question_picked` again for the same `id`, now with `audio: true` and
+`format`, followed by the speech frame. Play it if that question is still the
+one on screen. A `question_picked` with an `id` the phone has already shown is
+never a new question, so don't count it as one. Speech that comes later, or
+for an older question, is dropped.
 
 Button presses less than a second apart are treated as one press, so a double
 tap doesn't skip a question.
@@ -210,7 +217,9 @@ answered questions again.
 
 `chat_ids` is optional. The server forwards `ranking` to viewers as
 `questions` (without `chat_ids`) and keeps the last ranking and speech if the
-AI host disconnects. Questions with a missing or too-long id or text are
+AI host disconnects. Speech for a question that was already picked is dropped,
+except within 10 seconds of a press that went to the phone without it: then it
+is sent on to the phone (see the phone section). Questions with a missing or too-long id or text are
 skipped (with a `bad_question` error), and anything past 20 is dropped.
 
 **Never reuse an id** for a different question, not even after the AI host

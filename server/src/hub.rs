@@ -77,6 +77,8 @@ struct Inner {
     /// The most recent picks, replayed to an AI host that reconnects.
     picked: VecDeque<Question>,
     last_pick: Option<Instant>,
+    /// The last pick, if it went to the phone without speech: its id and when.
+    awaiting_speech: Option<(String, Instant)>,
 }
 
 /// What a button press did.
@@ -93,6 +95,17 @@ pub enum Pick {
 pub struct Speech {
     pub format: String,
     pub audio: Bytes,
+}
+
+/// What became of a speech clip from the AI host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeechFate {
+    /// Kept for the button.
+    Stored,
+    /// Its question was just picked without it, so it went straight to the phone.
+    SentLate,
+    /// Its question was picked too long ago, or before a newer one; nobody needs it.
+    Dropped,
 }
 
 /// What `/status` shows: enough to answer "is it working?" from a phone.
@@ -395,16 +408,34 @@ impl Hub {
         self.broadcast(ViewerEvent::Text(message.to_text()));
     }
 
-    pub fn add_speech(&self, session: u64, question_id: String, speech: Speech) {
+    /// Keeps a speech clip for the button, or sends it on to the phone if its
+    /// question was picked without it less than `late_window` ago.
+    pub fn add_speech(&self, session: u64, question_id: String, speech: Speech, late_window: Duration) -> SpeechFate {
         let mut inner = self.lock();
         if !inner.ai.as_ref().is_some_and(|ai| ai.session == session) {
-            return;
+            return SpeechFate::Dropped;
+        }
+        if inner.awaiting_speech.as_ref().is_some_and(|(id, _)| *id == question_id) {
+            let (_, pressed_at) = inner.awaiting_speech.take().expect("checked above");
+            let question = inner.picked.back().filter(|q| q.id == question_id);
+            let phone = inner.phone.as_ref().map(|p| p.tx.clone());
+            return match (question, phone) {
+                (Some(question), Some(phone_tx)) if pressed_at.elapsed() <= late_window => {
+                    send_pick_to_phone(&phone_tx, question, Some(&speech));
+                    SpeechFate::SentLate
+                }
+                _ => SpeechFate::Dropped,
+            };
+        }
+        if inner.answered.contains(&question_id) {
+            return SpeechFate::Dropped;
         }
         if inner.speech.len() >= MAX_SPEECH_CLIPS && !inner.speech.contains_key(&question_id) {
             let Inner { speech, questions, .. } = &mut *inner;
             speech.retain(|id, _| questions.iter().any(|q| &q.id == id));
         }
         inner.speech.insert(question_id, speech);
+        SpeechFate::Stored
     }
 
     /// The button: takes the top question, sends its speech to the phone, and
@@ -421,23 +452,13 @@ impl Hub {
         if inner.questions.is_empty() {
             return Pick::Empty;
         }
-        inner.last_pick = Some(Instant::now());
+        let now = Instant::now();
+        inner.last_pick = Some(now);
         let question = inner.questions.remove(0);
         let speech = inner.speech.remove(&question.id);
-
-        let _ = phone_tx.try_send(Message::Text(
-            ServerMessage::QuestionPicked {
-                id: &question.id,
-                text: &question.text,
-                audio: Some(speech.is_some()),
-                format: speech.as_ref().map(|s| s.format.as_str()),
-            }
-            .to_text(),
-        ));
-        if let Some(speech) = &speech {
-            let frame = encode_frame(FrameKind::Speech, false, unix_micros(), &speech.audio);
-            let _ = phone_tx.try_send(Message::Binary(frame));
-        }
+        send_pick_to_phone(&phone_tx, &question, speech.as_ref());
+        // If the speech is still being made, it can follow within the late window.
+        inner.awaiting_speech = speech.is_none().then(|| (question.id.clone(), now));
 
         let picked = picked_message(&question);
         self.log_question_event(&for_others(&question));
@@ -457,6 +478,23 @@ impl Hub {
         }
         inner.picked.push_back(question);
         Pick::Picked
+    }
+}
+
+/// `question_picked` as the phone gets it, with the speech frame when there is one.
+fn send_pick_to_phone(phone_tx: &mpsc::Sender<Message>, question: &Question, speech: Option<&Speech>) {
+    let _ = phone_tx.try_send(Message::Text(
+        ServerMessage::QuestionPicked {
+            id: &question.id,
+            text: &question.text,
+            audio: Some(speech.is_some()),
+            format: speech.map(|s| s.format.as_str()),
+        }
+        .to_text(),
+    ));
+    if let Some(speech) = speech {
+        let frame = encode_frame(FrameKind::Speech, false, unix_micros(), &speech.audio);
+        let _ = phone_tx.try_send(Message::Binary(frame));
     }
 }
 
