@@ -169,7 +169,9 @@ test("gives up on a frozen connection and opens a new one", async () => {
   const took = await until("a new connection", () => phone.opens === 2, 10000);
   clearInterval(streaming);
   assert.ok(phone.socket.isOpen);
-  assert.ok(took < FAST.stallMs + 3000, `noticed and reconnected in ${took} ms`);
+  // The stall only shows once the kernel's socket buffer is full, which takes
+  // a few seconds of frames on top of stallMs; loopback buffers are large.
+  assert.ok(took < FAST.stallMs + 6000, `noticed and reconnected in ${took} ms`);
 });
 
 test("keeps retrying with backoff until the server can be reached", async () => {

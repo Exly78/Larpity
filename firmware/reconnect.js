@@ -119,8 +119,10 @@ export class PhoneSocket {
       if (event.code === CLOSE_REPLACED) this.finish(STATUS.replaced);
       else this.lost(ws);
     };
-    // An error is always followed by a close, which handles it.
-    ws.onerror = () => {};
+    // Browsers follow an error with a close, but Node's WebSocket doesn't when
+    // the connection is refused, so treat the error as a loss too. lost()
+    // ignores whichever of the two comes second.
+    ws.onerror = () => this.lost(ws);
   }
 
   // Opening a socket also lets the server replace a stale one we gave up on.
