@@ -13,6 +13,11 @@ const MAX_AHEAD_S = 0.5;
 
 export type AudioConfig = { codec: string; sample_rate: number; channels: number };
 
+// The sample rates every browser must accept for an AudioBuffer; outside them
+// createBuffer throws on every frame.
+const MIN_RATE = 8000;
+const MAX_RATE = 96000;
+
 export function audioSupported(): boolean {
   return typeof AudioContext !== "undefined";
 }
@@ -36,7 +41,11 @@ export class AudioPlayer {
 
   /** From the `config` message. Only mono `pcm16` is sent today; anything else stays silent. */
   configure(audio: AudioConfig | null | undefined): void {
-    const ok = audio?.codec === "pcm16" && audio.channels === 1 && audio.sample_rate > 0;
+    const ok =
+      audio?.codec === "pcm16" &&
+      audio.channels === 1 &&
+      audio.sample_rate >= MIN_RATE &&
+      audio.sample_rate <= MAX_RATE;
     this.sampleRate = ok ? audio.sample_rate : null;
     this.render();
   }

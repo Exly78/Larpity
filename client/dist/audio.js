@@ -9,6 +9,10 @@ const LEAD_S = 0.25;
 // If more than this is queued (a burst after a stall), drop frames to stay live.
 // Live sound can't catch up, so whatever is queued stays as delay behind the picture.
 const MAX_AHEAD_S = 0.5;
+// The sample rates every browser must accept for an AudioBuffer; outside them
+// createBuffer throws on every frame.
+const MIN_RATE = 8000;
+const MAX_RATE = 96000;
 export function audioSupported() {
     return typeof AudioContext !== "undefined";
 }
@@ -30,7 +34,10 @@ export class AudioPlayer {
     }
     /** From the `config` message. Only mono `pcm16` is sent today; anything else stays silent. */
     configure(audio) {
-        const ok = audio?.codec === "pcm16" && audio.channels === 1 && audio.sample_rate > 0;
+        const ok = audio?.codec === "pcm16" &&
+            audio.channels === 1 &&
+            audio.sample_rate >= MIN_RATE &&
+            audio.sample_rate <= MAX_RATE;
         this.sampleRate = ok ? audio.sample_rate : null;
         this.render();
     }
