@@ -15,6 +15,10 @@ export const t = {
     writingAs: "Scrii ca",
     changeNick: "Schimbă",
     connecting: "Ne conectăm…",
+    // Video (#23)
+    loadingVideo: "Se încarcă imaginea…",
+    videoUnsupported: "Browserul tău nu poate reda video. Încearcă Chrome sau actualizează iPhone-ul.",
+    videoError: "Imaginea nu poate fi redată pe acest telefon.",
 };
 // Romanian text for the server's error codes (PROTOCOL.md, "Error codes").
 // The server's own `message` is English, for developers, so it is never shown.

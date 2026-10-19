@@ -77,9 +77,20 @@ body {
   color: var(--banner-text);
   padding: 10px 16px;
   flex-shrink: 0;
+  /* Tappable (see main.ts); older iPhone Safari only sends clicks to elements that look it. */
+  cursor: pointer;
 }
 .banner-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
-.banner-text { font-size: 16px; font-weight: 600; margin-top: 2px; }
+.banner-text {
+  font-size: 16px; font-weight: 600; margin-top: 2px;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.banner.open .banner-text { -webkit-line-clamp: unset; line-clamp: unset; }
 
 .chat {
   flex: 1;
