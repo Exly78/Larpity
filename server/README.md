@@ -76,12 +76,29 @@ phone dropped frames, sound and picture drift apart over a long recording.
 | `/phone/` | the phone page |
 | `/` | the viewer page |
 | `/health` | returns `ok` |
+| `/status` | is it working? JSON, see below |
 
 The two pages are served with `Cache-Control: no-cache`, so browsers check for
 a new version on every load (one small request per file, thanks to the ETag)
 and a deploy reaches every viewer at once. `CLAUDE.md`, `README.md`,
 `package.json`, `tsconfig.json`, `src/` and dotfiles in those folders are not
 served.
+
+## Status
+
+`/status` answers "is it working?" from any phone, without the server logs:
+
+```json
+{ "uptime_s": 1234, "phone": true,
+  "stream": { "video": { "codec": "avc1.42E01F", "width": 1280, "height": 720, "framerate": 15 },
+              "audio": { "codec": "pcm16", "sample_rate": 16000, "channels": 1 } },
+  "recording": "/var/lib/larpity/recordings/larpity-1760520000",
+  "viewers": 12, "ai": true, "questions": 4, "picked": 2, "chat_messages": 37 }
+```
+
+`stream` and `recording` are `null` while no phone is streaming. `questions` is
+the queue the button picks from; `picked` and `chat_messages` count since the
+server started. The page needs no token: it holds nothing secret.
 
 ## Test without the AI host
 
