@@ -6,12 +6,14 @@
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    path::PathBuf,
     sync::Mutex,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes};
 use bytes::Bytes;
+use serde::Serialize;
 use tokio::sync::{broadcast, mpsc};
 use tracing::warn;
 
@@ -44,6 +46,7 @@ pub enum ViewerEvent {
 pub struct Hub {
     inner: Mutex<Inner>,
     viewers: broadcast::Sender<ViewerEvent>,
+    started: Instant,
 }
 
 #[derive(Default)]
@@ -52,6 +55,10 @@ struct Inner {
     phone: Option<Slot>,
     /// The `config` message, while the phone is streaming.
     stream: Option<Utf8Bytes>,
+    /// The same config, parsed, for `/status`.
+    config: Option<StreamConfig>,
+    /// Where the current stream is being saved, if it is.
+    recording: Option<PathBuf>,
     /// Video frames since the last keyframe, so late joiners can start decoding at once.
     gop: Vec<Bytes>,
     next_chat_id: u64,
@@ -85,6 +92,25 @@ pub struct Speech {
     pub audio: Bytes,
 }
 
+/// What `/status` shows: enough to answer "is it working?" from a phone.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Status {
+    pub uptime_s: u64,
+    pub phone: bool,
+    /// The stream config while the phone is streaming.
+    pub stream: Option<StreamConfig>,
+    /// The recording's path without the extension, while one is being written.
+    pub recording: Option<PathBuf>,
+    pub viewers: usize,
+    pub ai: bool,
+    /// Questions waiting for the button.
+    pub questions: usize,
+    /// Questions picked since the server started.
+    pub picked: usize,
+    /// Chat messages since the server started.
+    pub chat_messages: u64,
+}
+
 /// The connection currently acting as the phone or the AI host.
 struct Slot {
     session: u64,
@@ -115,6 +141,22 @@ impl Hub {
         Self {
             inner: Mutex::default(),
             viewers: broadcast::channel(VIEWER_BACKLOG).0,
+            started: Instant::now(),
+        }
+    }
+
+    pub fn status(&self) -> Status {
+        let inner = self.lock();
+        Status {
+            uptime_s: self.started.elapsed().as_secs(),
+            phone: inner.phone.is_some(),
+            stream: inner.config.clone(),
+            recording: inner.recording.clone(),
+            viewers: self.viewers.receiver_count(),
+            ai: inner.ai.is_some(),
+            questions: inner.questions.len(),
+            picked: inner.answered.len(),
+            chat_messages: inner.next_chat_id,
         }
     }
 
@@ -158,6 +200,8 @@ impl Hub {
 
     fn end_stream(&self, inner: &mut Inner) {
         inner.gop.clear();
+        inner.config = None;
+        inner.recording = None;
         if inner.stream.take().is_some() {
             self.broadcast(ViewerEvent::StreamReset(ServerMessage::Offline.to_text()));
         }
@@ -170,8 +214,17 @@ impl Hub {
         }
         let text = ServerMessage::Config(config).to_text();
         inner.stream = Some(text.clone());
+        inner.config = Some(config.clone());
         inner.gop.clear();
         self.broadcast(ViewerEvent::StreamReset(text));
+    }
+
+    /// Where the phone's stream is being saved, or `None` once it isn't.
+    pub fn set_recording(&self, session: u64, path: Option<PathBuf>) {
+        let mut inner = self.lock();
+        if inner.phone.as_ref().is_some_and(|p| p.session == session) {
+            inner.recording = path;
+        }
     }
 
     pub fn publish_video(&self, session: u64, frame: Bytes, keyframe: bool) {

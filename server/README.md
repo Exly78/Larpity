@@ -73,6 +73,7 @@ phone dropped frames, sound and picture drift apart over a long recording.
 | `/ws/phone?token=…` | the phone |
 | `/ws/viewer` | viewers |
 | `/ws/ai?token=…` | the AI host |
+| `/status` | is it working? JSON, see below |
 | `/phone/` | the phone page |
 | `/` | the viewer page |
 | `/health` | returns `ok` |
@@ -86,6 +87,22 @@ its speech.
 ```sh
 cargo run --bin stub-ai -- --url ws://localhost:8080/ws/ai --token "$LARPITY_TOKEN"
 ```
+
+## Status
+
+`/status` answers "is it working?" from any phone, without the server logs:
+
+```json
+{ "uptime_s": 1234, "phone": true,
+  "stream": { "video": { "codec": "avc1.42E01F", "width": 1280, "height": 720, "framerate": 15 },
+              "audio": { "codec": "pcm16", "sample_rate": 16000, "channels": 1 } },
+  "recording": "/var/lib/larpity/recordings/larpity-1760520000",
+  "viewers": 12, "ai": true, "questions": 4, "picked": 2, "chat_messages": 37 }
+```
+
+`stream` and `recording` are `null` while no phone is streaming. `questions` is
+the queue the button picks from; `picked` and `chat_messages` count since the
+server started. The page needs no token: it holds nothing secret.
 
 ## Develop
 
