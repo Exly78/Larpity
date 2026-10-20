@@ -89,8 +89,15 @@ pub enum PhoneMessage {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ViewerMessage {
-    Join { nick: String },
-    Chat { text: String },
+    Join {
+        nick: String,
+        /// From an earlier `joined`: takes the nickname back after a reconnect.
+        #[serde(default)]
+        key: Option<String>,
+    },
+    Chat {
+        text: String,
+    },
 }
 
 /// Text messages the AI host sends.
@@ -147,6 +154,8 @@ pub enum ServerMessage<'a> {
     Offline,
     Joined {
         nick: &'a str,
+        /// Sent back with the next `join` to keep the nickname across a reconnect.
+        key: &'a str,
     },
     Chat(&'a ChatMessage),
     Questions {
@@ -320,5 +329,32 @@ mod tests {
         };
         assert_eq!(config.audio, None);
         assert_eq!(config.video.framerate, None);
+    }
+}
+
+#[cfg(test)]
+mod viewer_tests {
+    use super::*;
+
+    #[test]
+    fn join_with_and_without_a_key() {
+        let Ok(ViewerMessage::Join { nick, key }) = serde_json::from_str(r#"{"type":"join","nick":"Ana"}"#) else {
+            panic!("not a join");
+        };
+        assert_eq!((nick.as_str(), key), ("Ana", None));
+        let Ok(ViewerMessage::Join { key, .. }) = serde_json::from_str(r#"{"type":"join","nick":"Ana","key":"abc"}"#)
+        else {
+            panic!("not a join");
+        };
+        assert_eq!(key.as_deref(), Some("abc"));
+        assert_eq!(
+            ServerMessage::Joined {
+                nick: "Ana2",
+                key: "abc"
+            }
+            .to_text()
+            .as_str(),
+            r#"{"type":"joined","nick":"Ana2","key":"abc"}"#
+        );
     }
 }

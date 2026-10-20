@@ -152,7 +152,8 @@ After that it streams everything live.
 **Viewer → server**
 
 ```jsonc
-{ "type": "join", "nick": "Ana" }      // required before chatting; send again to change nickname
+{ "type": "join", "nick": "Ana" }                              // required before chatting; send again to change nickname
+{ "type": "join", "nick": "Ana", "key": "9f1c3b7a2e4d5c6b8a7f6e5d4c3b2a19" }  // on reconnect: the key from your last joined gets the name back
 { "type": "chat", "text": "Ce ai studiat?" }
 ```
 
@@ -161,7 +162,7 @@ After that it streams everything live.
 ```jsonc
 { "type": "config", "video": { ... }, "audio": { ... } }   // same as the phone's; (re)configure the decoder
 { "type": "offline" }                                       // the phone disconnected; reset and wait for config
-{ "type": "joined", "nick": "Ana2" }                        // your nickname, possibly with a number added if taken
+{ "type": "joined", "nick": "Ana2", "key": "9f1c3b7a2e4d5c6b8a7f6e5d4c3b2a19" }  // your nickname (a number added if taken) and the key that keeps it
 { "type": "chat", "id": 12, "nick": "Ana", "text": "Ce ai studiat?", "ts": 1760520000000 }  // ts = Unix ms
 { "type": "questions", "questions": [ { "id": "q7", "text": "Cât durează o operație?", "count": 4 } ] }  // best first
 { "type": "question_picked", "id": "q7", "text": "Cât durează o operație?" }   // show the "being answered" banner
@@ -175,6 +176,16 @@ Chat rules: nicknames are 1–24 characters and unique among connected viewers
 (the server adds a number if one is taken). Messages are 1–200 characters, at
 most one per second per viewer. Every viewer, including the sender, gets each
 `chat` message back from the server, so only render what comes from the server.
+
+`joined` comes with a `key`. Keep it in memory and send it with the `join`
+after a reconnect: a `join` whose `key` matches an earlier `joined` first
+frees the nickname that connection held, so a viewer whose phone switched
+networks gets "Ana" back instead of "Ana2" while the server still holds the
+dead connection (up to 15 s). The old connection, if it is still alive, has
+no nickname any more and gets `join_required` if it chats. The key stays the
+same across nickname changes on one connection. It is not a secret, just a
+way to tell your own old connection from a stranger who wants the same name;
+a `join` with a key the server doesn't know is treated as one without.
 
 If a viewer falls behind (slow network), the server skips video until the next
 keyframe instead of disconnecting it.
