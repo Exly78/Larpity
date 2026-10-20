@@ -176,6 +176,105 @@ async fn only_the_current_phone_can_press() {
     assert_quiet(&mut viewer).await;
 }
 
+/// Press until q1 (with speech) and q2 (without) are both picked; returns once the
+/// phone has shown q2 as text only.
+async fn press_through_q2(phone: &mut Ws, ai: &mut Ws, viewer: &mut Ws) {
+    press(phone).await;
+    expect_type(phone, "question_picked").await;
+    recv_binary(phone).await;
+    expect_type(viewer, "question_picked").await;
+    expect_type(viewer, "questions").await;
+    expect_type(ai, "question_picked").await;
+    press(phone).await;
+    let picked = expect_type(phone, "question_picked").await;
+    assert_eq!(picked["id"], "q2");
+    assert_eq!(picked["audio"], false);
+    expect_type(viewer, "question_picked").await;
+    expect_type(viewer, "questions").await;
+    expect_type(ai, "question_picked").await;
+}
+
+#[tokio::test]
+async fn speech_that_arrives_just_after_the_press_still_reaches_the_phone() {
+    let addr = start(no_debounce()).await;
+    let (mut phone, mut ai, mut viewer) = ready(addr).await;
+    press_through_q2(&mut phone, &mut ai, &mut viewer).await;
+
+    send_json(
+        &mut ai,
+        json!({ "type": "speech", "question_id": "q2", "format": "wav", "audio": AUDIO_BASE64 }),
+    )
+    .await;
+    let again = expect_type(&mut phone, "question_picked").await;
+    assert_eq!(
+        again,
+        json!({ "type": "question_picked", "id": "q2", "text": "Câți ani ai?", "audio": true, "format": "wav" })
+    );
+    let frame = recv_binary(&mut phone).await;
+    assert_eq!(FrameHeader::parse(&frame).unwrap().kind, FrameKind::Speech);
+    assert_eq!(&frame[HEADER_LEN..], AUDIO);
+    // Only the phone hears about it, and only once.
+    assert_quiet(&mut viewer).await;
+    assert_quiet(&mut ai).await;
+    send_json(
+        &mut ai,
+        json!({ "type": "speech", "question_id": "q2", "format": "wav", "audio": AUDIO_BASE64 }),
+    )
+    .await;
+    assert_quiet(&mut phone).await;
+}
+
+#[tokio::test]
+async fn speech_that_arrives_too_late_is_dropped() {
+    let addr = start(Config {
+        late_speech_window: Duration::ZERO,
+        ..no_debounce()
+    })
+    .await;
+    let (mut phone, mut ai, mut viewer) = ready(addr).await;
+    press_through_q2(&mut phone, &mut ai, &mut viewer).await;
+
+    send_json(
+        &mut ai,
+        json!({ "type": "speech", "question_id": "q2", "format": "wav", "audio": AUDIO_BASE64 }),
+    )
+    .await;
+    assert_quiet(&mut phone).await;
+}
+
+#[tokio::test]
+async fn speech_for_an_older_pick_is_dropped() {
+    let addr = start(no_debounce()).await;
+    let (mut phone, mut ai, mut viewer) = ready(addr).await;
+    press_through_q2(&mut phone, &mut ai, &mut viewer).await;
+    // A newer question gets picked, also without speech.
+    send_json(
+        &mut ai,
+        json!({ "type": "ranking", "questions": [{ "id": "q3", "text": "Unde lucrezi?" }] }),
+    )
+    .await;
+    expect_type(&mut viewer, "questions").await;
+    press(&mut phone).await;
+    assert_eq!(expect_type(&mut phone, "question_picked").await["id"], "q3");
+    expect_type(&mut ai, "question_picked").await;
+
+    // q2's speech is for a question the professional has moved past.
+    send_json(
+        &mut ai,
+        json!({ "type": "speech", "question_id": "q2", "format": "wav", "audio": AUDIO_BASE64 }),
+    )
+    .await;
+    assert_quiet(&mut phone).await;
+    // q3's still counts.
+    send_json(
+        &mut ai,
+        json!({ "type": "speech", "question_id": "q3", "format": "wav", "audio": AUDIO_BASE64 }),
+    )
+    .await;
+    assert_eq!(expect_type(&mut phone, "question_picked").await["id"], "q3");
+    recv_binary(&mut phone).await;
+}
+
 struct Running(Child);
 
 impl Drop for Running {
