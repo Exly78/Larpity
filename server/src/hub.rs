@@ -15,6 +15,7 @@ use bytes::Bytes;
 use tokio::sync::{broadcast, mpsc};
 use tracing::warn;
 
+use crate::recording::{EventLog, LogFile};
 use crate::{
     chat::{HISTORY, Nicknames},
     protocol::{ChatMessage, FrameKind, Question, ServerMessage, StreamConfig, encode_frame},
@@ -48,6 +49,8 @@ pub struct Hub {
 
 #[derive(Default)]
 struct Inner {
+    /// The chat and questions log, when recording is on.
+    log: Option<EventLog>,
     next_session: u64,
     phone: Option<Slot>,
     /// The `config` message, while the phone is streaming.
@@ -129,6 +132,11 @@ impl Hub {
 
     pub fn viewer_count(&self) -> usize {
         self.viewers.receiver_count()
+    }
+
+    /// Keeps a log of the chat and the questions in `dir`, next to the recordings.
+    pub fn log_to(&self, dir: std::path::PathBuf) {
+        self.lock().log = Some(EventLog::spawn(dir));
     }
 
     /// Makes this connection the phone, replacing any earlier one. Returns its session id.
@@ -261,6 +269,7 @@ impl Hub {
         if let Some(ai) = &inner.ai {
             let _ = ai.tx.try_send(Message::Text(text.clone()));
         }
+        log_event(&inner, LogFile::Chat, &text);
         self.broadcast(ViewerEvent::Text(text));
         if inner.history.len() == HISTORY {
             inner.history.pop_front();
@@ -311,12 +320,11 @@ impl Hub {
             questions, answered, ..
         } = &mut *inner;
         questions.retain(|q| !answered.contains(&q.id));
-        self.broadcast(ViewerEvent::Text(
-            ServerMessage::Questions {
-                questions: &inner.questions,
-            }
-            .to_text(),
-        ));
+        let message = ServerMessage::Questions {
+            questions: &inner.questions,
+        };
+        log_event(&inner, LogFile::Questions, &stamped(&message));
+        self.broadcast(ViewerEvent::Text(message.to_text()));
     }
 
     pub fn add_speech(&self, session: u64, question_id: String, speech: Speech) {
@@ -376,6 +384,23 @@ impl Hub {
         ));
 
         inner.answered.insert(question.id.clone());
+        log_event(
+            &inner,
+            LogFile::Questions,
+            &stamped(&ServerMessage::QuestionPicked {
+                id: &question.id,
+                text: &question.text,
+                audio: None,
+                format: None,
+            }),
+        );
+        log_event(
+            &inner,
+            LogFile::Questions,
+            &stamped(&ServerMessage::Questions {
+                questions: &inner.questions,
+            }),
+        );
         if inner.picked.len() == HISTORY {
             inner.picked.pop_front();
         }
@@ -405,4 +430,26 @@ fn unix_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as u64)
+}
+
+/// Appends a line to the chat or questions log, if recording is on.
+fn log_event(inner: &Inner, file: LogFile, line: &str) {
+    if let Some(log) = &inner.log {
+        log.log(file, line.to_owned());
+    }
+}
+
+/// The message as JSON with `"ts"` (Unix ms) in front, for the questions log.
+fn stamped(message: &ServerMessage<'_>) -> String {
+    #[derive(serde::Serialize)]
+    struct Stamped<'a> {
+        ts: u64,
+        #[serde(flatten)]
+        message: &'a ServerMessage<'a>,
+    }
+    serde_json::to_string(&Stamped {
+        ts: unix_millis(),
+        message,
+    })
+    .expect("server messages always serialize")
 }
