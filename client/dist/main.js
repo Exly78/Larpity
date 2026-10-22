@@ -90,13 +90,29 @@ function setLive(live) {
         return setStageMsg(t.videoUnsupported);
     setStageMsg(live ? t.loadingVideo : t.waitingForStream);
 }
+function isChatAtBottom() {
+    return chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
+}
+/**
+ * Runs a change to the boxes above the chat. Growing, they shrink the chat without
+ * scrolling it, which would hide the newest messages and stop addChat following
+ * new ones, so a reader who was at the bottom is put back there.
+ */
+function keepChatAtBottom(change) {
+    const atBottom = isChatAtBottom();
+    change();
+    if (atBottom)
+        chatList.scrollTop = chatList.scrollHeight;
+}
 /**
  * Shows the question the professional is answering. Only while live: the server
  * keeps the last pick after the phone leaves, but then nobody is answering it.
  */
 function renderBanner() {
-    banner.hidden = !isLive || pickedText === null;
-    bannerText.textContent = pickedText ?? "";
+    keepChatAtBottom(() => {
+        banner.hidden = !isLive || pickedText === null;
+        bannerText.textContent = pickedText ?? "";
+    });
 }
 /**
  * Shows the ranked questions with their counts. Only while live, like the banner:
@@ -104,6 +120,9 @@ function renderBanner() {
  * when the phone comes back, so the list is hidden rather than thrown away.
  */
 function renderQuestions() {
+    keepChatAtBottom(fillQuestions);
+}
+function fillQuestions() {
     questionsBox.hidden = !isLive || questions.length === 0;
     questionsBox.classList.toggle("open", questionsOpen);
     questionsHead.setAttribute("aria-expanded", String(questionsOpen));
@@ -138,7 +157,7 @@ function clearChat() {
 function addChat(nick, text) {
     // Stick to the bottom only if the reader is already there, so scrolling up
     // to read older messages isn't interrupted.
-    const atBottom = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
+    const atBottom = isChatAtBottom();
     chatList.querySelector(".empty")?.remove();
     const li = document.createElement("li");
     if (nick === myNick)
@@ -303,7 +322,7 @@ $("change-nick").addEventListener("click", () => {
     input.select();
 });
 // Long questions are cut to three lines so the chat keeps its room; a tap shows all of it.
-banner.addEventListener("click", () => banner.classList.toggle("open"));
+banner.addEventListener("click", () => keepChatAtBottom(() => banner.classList.toggle("open")));
 // The whole box is the tap target, not just its heading; the heading is a button for keyboards.
 questionsBox.addEventListener("click", () => {
     questionsOpen = !questionsOpen;
