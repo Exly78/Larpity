@@ -1,15 +1,16 @@
 //! The WebSocket endpoints. Each connection gets a reader loop (this task) and a
 //! writer task, joined by an mpsc channel; the writer also sends the keep-alive pings.
 
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use axum::{
     Router,
     extract::{
-        Query, State,
+        Query, Request, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header::CACHE_CONTROL},
+    middleware::{self, Next},
     response::{IntoResponse, Redirect, Response},
     routing::get,
 };
@@ -24,7 +25,7 @@ use tokio::{
     task::JoinHandle,
     time::{Instant, interval_at, timeout},
 };
-use tower_http::services::ServeDir;
+use tower_http::{services::ServeDir, set_header::SetResponseHeaderLayer};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -52,8 +53,8 @@ pub struct AppState {
 }
 
 pub fn router(config: Config) -> Router {
-    let client = ServeDir::new(&config.client_dir);
-    let firmware = ServeDir::new(&config.firmware_dir);
+    let client = static_files(&config.client_dir);
+    let firmware = static_files(&config.firmware_dir);
     let state = AppState {
         hub: Arc::new(Hub::new()),
         config: Arc::new(config),
@@ -72,6 +73,64 @@ pub fn router(config: Config) -> Router {
         .nest_service("/phone/", firmware)
         .fallback_service(client)
         .with_state(state)
+}
+
+/// A folder served as static files, the viewer page or the phone page.
+///
+/// `Cache-Control: no-cache` makes browsers ask before reusing a cached file, so
+/// a deploy reaches every viewer at once; the ETag keeps that to one small
+/// request per file. Files only developers need (the notes, the TypeScript
+/// sources, the tool configuration) are not served.
+fn static_files(dir: &Path) -> Router {
+    Router::new()
+        .fallback_service(ServeDir::new(dir))
+        .layer(SetResponseHeaderLayer::overriding(
+            CACHE_CONTROL,
+            HeaderValue::from_static("no-cache"),
+        ))
+        .layer(middleware::from_fn(hide_sources))
+}
+
+async fn hide_sources(request: Request, next: Next) -> Response {
+    if hidden(request.uri().path()) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    next.run(request).await
+}
+
+/// True for the paths in `client/` and `firmware/` that are not part of the page:
+/// the notes, the sources, the package files and anything starting with a dot.
+fn hidden(path: &str) -> bool {
+    let path = percent_decode(path);
+    let first = path.trim_start_matches('/').split('/').next().unwrap_or("");
+    first.starts_with('.')
+        || matches!(
+            first,
+            "src" | "node_modules" | "CLAUDE.md" | "README.md" | "package.json" | "package-lock.json" | "tsconfig.json"
+        )
+}
+
+/// Undoes `%XX` escapes, so `CLAUDE%2Emd` is seen as `CLAUDE.md`. A bad escape is left as it is.
+fn percent_decode(path: &str) -> String {
+    let bytes = path.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let escaped = (bytes[i] == b'%' && i + 2 < bytes.len())
+            .then(|| u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).ok()?, 16).ok())
+            .flatten();
+        match escaped {
+            Some(byte) => {
+                out.push(byte);
+                i += 3;
+            }
+            None => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[derive(Deserialize)]
@@ -450,6 +509,42 @@ mod tests {
             frame: Bytes::from_static(b"frame"),
             keyframe,
         }
+    }
+
+    #[test]
+    fn developer_files_are_hidden() {
+        for path in [
+            "/CLAUDE.md",
+            "/README.md",
+            "/package.json",
+            "/package-lock.json",
+            "/tsconfig.json",
+            "/src/main.ts",
+            "/node_modules/typescript/lib/tsc.js",
+            "/.gitignore",
+            "/CLAUDE%2Emd",
+            "/src%2Fmain.ts",
+        ] {
+            assert!(hidden(path), "{path} should be hidden");
+        }
+        for path in [
+            "/",
+            "/index.html",
+            "/dist/main.js",
+            "/styles.css",
+            "/dist/README.md",
+            "/srcs/x.js",
+        ] {
+            assert!(!hidden(path), "{path} should be served");
+        }
+    }
+
+    #[test]
+    fn percent_decoding_leaves_bad_escapes_alone() {
+        assert_eq!(percent_decode("/a%20b"), "/a b");
+        assert_eq!(percent_decode("/a%2"), "/a%2");
+        assert_eq!(percent_decode("/a%zz"), "/a%zz");
+        assert_eq!(percent_decode("%"), "%");
     }
 
     #[test]
