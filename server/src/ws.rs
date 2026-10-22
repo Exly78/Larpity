@@ -58,6 +58,9 @@ pub fn router(config: Config) -> Router {
         hub: Arc::new(Hub::new()),
         config: Arc::new(config),
     };
+    if let Some(dir) = &state.config.record_dir {
+        state.hub.log_to(dir.clone());
+    }
     Router::new()
         .route("/ws/phone", get(phone_ws))
         .route("/ws/viewer", get(viewer_ws))

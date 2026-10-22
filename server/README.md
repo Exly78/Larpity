@@ -81,6 +81,16 @@ saved as it arrives:
 - `larpity-<unix time>.pcm`: the audio, when it is `pcm16`
 - `larpity-<unix time>.json`: the stream config
 
+And for the whole server run, one JSON line per event:
+
+- `chat-<unix time>.jsonl`: every `chat` message, exactly as viewers got it
+- `questions-<unix time>.jsonl`: every `questions` list sent to viewers and
+  every `question_picked`, each with a `ts` (Unix ms) in front
+
+So after a session you can see what was asked, in what order, and what got
+answered when. Chat happens while the phone is offline too, so these files
+are per server run, not per stream.
+
 Turn them into an MP4:
 
 ```sh
