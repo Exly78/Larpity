@@ -135,6 +135,8 @@ function renderQuestions(): void {
 }
 
 function fillQuestions(): void {
+  // An empty list (after the last pick, or on reconnect) comes back closed.
+  if (questions.length === 0) questionsOpen = false;
   questionsBox.hidden = !isLive || questions.length === 0;
   questionsBox.classList.toggle("open", questionsOpen);
   questionsHead.setAttribute("aria-expanded", String(questionsOpen));
