@@ -17,6 +17,8 @@ pub struct Config {
     pub chat_interval: Duration,
     /// Button presses closer together than this count as one, so a double tap doesn't skip a question.
     pub button_debounce: Duration,
+    /// Speech that arrives this long after a press that went out without it is still sent to the phone.
+    pub late_speech_window: Duration,
 }
 
 impl Default for Config {
@@ -30,6 +32,7 @@ impl Default for Config {
             idle_timeout: Duration::from_secs(15),
             chat_interval: Duration::from_secs(1),
             button_debounce: Duration::from_secs(1),
+            late_speech_window: Duration::from_secs(10),
         }
     }
 }

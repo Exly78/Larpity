@@ -253,8 +253,14 @@ async fn run_ai(state: AppState, socket: WebSocket) {
                 audio,
             }) => match ai::decode_speech(&format, &audio) {
                 Some(audio) => {
-                    debug!(session, question_id, bytes = audio.len(), "speech ready");
-                    state.hub.add_speech(session, question_id, Speech { format, audio });
+                    let bytes = audio.len();
+                    let fate = state.hub.add_speech(
+                        session,
+                        question_id.clone(),
+                        Speech { format, audio },
+                        state.config.late_speech_window,
+                    );
+                    debug!(session, question_id, bytes, ?fate, "speech");
                 }
                 None => send_error(&tx, ErrorCode::BadSpeech),
             },
