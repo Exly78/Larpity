@@ -20,9 +20,24 @@ async fn viewer(addr: std::net::SocketAddr) -> Ws {
 }
 
 async fn join(ws: &mut Ws, nick: &str) -> String {
-    send_json(ws, json!({ "type": "join", "nick": nick })).await;
+    join_with_key(ws, nick, None).await.0
+}
+
+/// Joins, with the key from an earlier `joined` if given; returns the nickname and key.
+async fn join_with_key(ws: &mut Ws, nick: &str, key: Option<&str>) -> (String, String) {
+    let mut message = json!({ "type": "join", "nick": nick });
+    if let Some(key) = key {
+        message["key"] = json!(key);
+    }
+    send_json(ws, message).await;
     let joined = expect_type(ws, "joined").await;
-    joined["nick"].as_str().unwrap().to_owned()
+    let mut keys: Vec<&String> = joined.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["key", "nick", "type"]);
+    (
+        joined["nick"].as_str().unwrap().to_owned(),
+        joined["key"].as_str().unwrap().to_owned(),
+    )
 }
 
 #[tokio::test]
@@ -148,4 +163,65 @@ async fn chat_history_comes_after_the_stream_snapshot() {
     let mut late = connect(addr, "/ws/viewer").await;
     expect_type(&mut late, "config").await;
     expect_type(&mut late, "chat").await;
+}
+
+#[tokio::test]
+async fn the_key_gets_the_nickname_back_while_the_old_connection_lingers() {
+    let addr = start(no_rate_limit()).await;
+    let mut old = viewer(addr).await;
+    let (nick, key) = join_with_key(&mut old, "Ana", None).await;
+    assert_eq!(nick, "Ana");
+    assert_eq!(key.len(), 32);
+
+    // The phone switched networks: the old socket is still open on the server,
+    // and the page reconnects with the key.
+    let mut new = viewer(addr).await;
+    let (nick, new_key) = join_with_key(&mut new, "Ana", Some(&key)).await;
+    assert_eq!(nick, "Ana");
+    assert_eq!(new_key.len(), 32);
+
+    send_json(&mut new, json!({ "type": "chat", "text": "Tot eu sunt" })).await;
+    let chat = expect_type(&mut new, "chat").await;
+    assert_eq!(chat["nick"], "Ana");
+    // The old connection lost its name; if it is somehow alive it must join again.
+    assert_eq!(expect_type(&mut old, "chat").await["nick"], "Ana");
+    send_json(&mut old, json!({ "type": "chat", "text": "ghost" })).await;
+    assert_eq!(expect_type(&mut old, "error").await["code"], "join_required");
+    assert_quiet(&mut new).await;
+}
+
+#[tokio::test]
+async fn an_unknown_key_is_ignored() {
+    let addr = start(Config::default()).await;
+    let mut first = viewer(addr).await;
+    let (_, key) = join_with_key(&mut first, "Ana", None).await;
+
+    let mut stranger = viewer(addr).await;
+    assert_eq!(join_with_key(&mut stranger, "Ana", Some("not-a-key")).await.0, "Ana2");
+    // A key that was already used up (the old connection left) is unknown too.
+    drop(first);
+    let mut late = viewer(addr).await;
+    for _ in 0..50 {
+        if join_with_key(&mut late, "Bob", None).await.0 == "Bob" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let mut third = viewer(addr).await;
+    // "Ana" is free again (first left), so the key makes no difference: still "Ana".
+    assert_eq!(join_with_key(&mut third, "Ana", Some(&key)).await.0, "Ana");
+}
+
+#[tokio::test]
+async fn the_key_stays_the_same_across_a_nickname_change() {
+    let addr = start(Config::default()).await;
+    let mut ws = viewer(addr).await;
+    let (_, key) = join_with_key(&mut ws, "Ana", None).await;
+    let (nick, same_key) = join_with_key(&mut ws, "Bob", None).await;
+    assert_eq!(nick, "Bob");
+    assert_eq!(same_key, key);
+    // Sending the own key back is harmless.
+    let (nick, still) = join_with_key(&mut ws, "Ana", Some(&key)).await;
+    assert_eq!(nick, "Ana");
+    assert_eq!(still, key);
 }

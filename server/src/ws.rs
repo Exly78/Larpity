@@ -175,11 +175,10 @@ async fn run_phone(state: AppState, socket: WebSocket) {
 async fn run_viewer(state: AppState, socket: WebSocket) {
     let (sink, stream) = socket.split();
     let (tx, rx) = mpsc::channel::<Message>(OUTBOX);
-    let (snapshot, events) = state.hub.join_viewer();
-    info!(viewers = state.hub.viewer_count(), "viewer connected");
+    let (session, snapshot, events) = state.hub.join_viewer();
+    info!(session, viewers = state.hub.viewer_count(), "viewer connected");
     let writer = tokio::spawn(viewer_write_loop(sink, snapshot, events, rx, state.config.ping_every));
     let mut inbound = Inbound::new(stream, state.config.idle_timeout);
-    let mut nick: Option<String> = None;
     let mut last_chat: Option<Instant> = None;
 
     while let Some(message) = inbound.next().await {
@@ -188,20 +187,17 @@ async fn run_viewer(state: AppState, socket: WebSocket) {
             continue;
         };
         match serde_json::from_str::<ViewerMessage>(&text) {
-            Ok(ViewerMessage::Join { nick: wanted }) => {
+            Ok(ViewerMessage::Join { nick: wanted, key }) => {
                 let Some(wanted) = chat::clean_nick(&wanted) else {
                     send_error(&tx, ErrorCode::BadNick);
                     continue;
                 };
-                let given = state.hub.claim_nick(&wanted, nick.as_deref());
-                let _ = tx.try_send(Message::Text(ServerMessage::Joined { nick: &given }.to_text()));
-                nick = Some(given);
+                let (nick, key) = state.hub.claim_nick(session, &wanted, key.as_deref());
+                let _ = tx.try_send(Message::Text(
+                    ServerMessage::Joined { nick: &nick, key: &key }.to_text(),
+                ));
             }
             Ok(ViewerMessage::Chat { text }) => {
-                let Some(nick) = &nick else {
-                    send_error(&tx, ErrorCode::JoinRequired);
-                    continue;
-                };
                 let Some(text) = chat::clean_text(&text) else {
                     send_error(&tx, ErrorCode::BadText);
                     continue;
@@ -210,16 +206,17 @@ async fn run_viewer(state: AppState, socket: WebSocket) {
                     send_error(&tx, ErrorCode::RateLimited);
                     continue;
                 }
+                if !state.hub.post_chat(session, text) {
+                    send_error(&tx, ErrorCode::JoinRequired);
+                    continue;
+                }
                 last_chat = Some(Instant::now());
-                state.hub.post_chat(nick, text);
             }
             Err(_) => send_error(&tx, ErrorCode::BadMessage),
         }
     }
 
-    if let Some(nick) = nick {
-        state.hub.release_nick(&nick);
-    }
+    state.hub.leave_viewer(session);
     drop(tx);
     finish(writer).await;
     info!(viewers = state.hub.viewer_count(), "viewer disconnected");
