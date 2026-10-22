@@ -17,6 +17,11 @@ export const t = {
   changeNick: "Schimbă",
   connecting: "Ne conectăm…",
 
+  // Ranked questions (#90)
+  questionsTitle: "Întrebări în așteptare",
+  showAllQuestions: (n: number) => `Vezi toate (${n})`,
+  showFewerQuestions: "Mai puțin",
+
   // Video (#23)
   loadingVideo: "Se încarcă imaginea…",
   videoUnsupported: "Browserul tău nu poate reda video. Încearcă Chrome sau actualizează iPhone-ul.",
