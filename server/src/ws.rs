@@ -66,6 +66,7 @@ pub fn router(config: Config) -> Router {
         .route("/ws/viewer", get(viewer_ws))
         .route("/ws/ai", get(ai_ws))
         .route("/health", get(|| async { "ok" }))
+        .route("/status", get(status))
         // Without the slash, relative links on the phone page would resolve against `/`.
         .route("/phone", get(|| async { Redirect::permanent("/phone/") }))
         .nest_service("/phone/", firmware)
@@ -76,6 +77,16 @@ pub fn router(config: Config) -> Router {
 #[derive(Deserialize)]
 struct TokenQuery {
     token: Option<String>,
+}
+
+/// Is it working? Phone, stream, viewers, AI host, questions and recording, as JSON.
+async fn status(State(state): State<AppState>) -> Response {
+    let no_store = axum::http::HeaderValue::from_static("no-store");
+    (
+        [(axum::http::header::CACHE_CONTROL, no_store)],
+        axum::Json(state.hub.status()),
+    )
+        .into_response()
 }
 
 async fn phone_ws(State(state): State<AppState>, Query(query): Query<TokenQuery>, ws: WebSocketUpgrade) -> Response {
@@ -131,6 +142,9 @@ async fn run_phone(state: AppState, socket: WebSocket) {
                                 None
                             }
                         };
+                        state
+                            .hub
+                            .set_recording(session, recorder.as_ref().map(|rec| rec.base().to_path_buf()));
                     }
                 }
                 Ok(PhoneMessage::Button) => match state.hub.pick_question(session, state.config.button_debounce) {
@@ -163,7 +177,11 @@ async fn run_phone(state: AppState, socket: WebSocket) {
                         continue;
                     }
                 }
+                let was_recording = recorder.is_some();
                 record(&mut recorder, header.kind, &frame[HEADER_LEN..]).await;
+                if was_recording && recorder.is_none() {
+                    state.hub.set_recording(session, None);
+                }
             }
             _ => {}
         }
