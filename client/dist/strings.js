@@ -15,6 +15,10 @@ export const t = {
     writingAs: "Scrii ca",
     changeNick: "Schimbă",
     connecting: "Ne conectăm…",
+    // Ranked questions (#90)
+    questionsTitle: "Întrebări în așteptare",
+    showAllQuestions: (n) => `Vezi toate (${n})`,
+    showFewerQuestions: "Mai puțin",
     // Video (#23)
     loadingVideo: "Se încarcă imaginea…",
     videoUnsupported: "Browserul tău nu poate reda video. Încearcă Chrome sau actualizează iPhone-ul.",

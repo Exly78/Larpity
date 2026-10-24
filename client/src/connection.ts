@@ -4,14 +4,18 @@
 
 import type { AudioConfig } from "./audio.js";
 
+/** One entry of the AI's ranking; `count` is how many chat messages asked it. */
+export type Question = { id: string; text: string; count: number };
+
 export type ServerMessage =
   | { type: "config"; video: { codec: string }; audio?: AudioConfig | null }
   | { type: "offline" }
   | { type: "joined"; nick: string; key: string }
   | { type: "chat"; id: number; nick: string; text: string; ts: number }
+  | { type: "questions"; questions: Question[] }
   | { type: "question_picked"; id: string; text: string }
   | { type: "error"; code: string; message?: string };
-// Other types (questions, ...) also arrive; handlers ignore what they don't know.
+// Types added later may also arrive; handlers ignore what they don't know.
 
 export type Handlers = {
   onOpen(): void;

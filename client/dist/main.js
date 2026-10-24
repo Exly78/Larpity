@@ -1,5 +1,5 @@
-// The viewer page: chat (#25), video (#23), audio (#24) and the "being answered"
-// banner (#26).
+// The viewer page: chat (#25), video (#23), audio (#24), the "being answered"
+// banner (#26) and the ranked questions (#90).
 import { AudioPlayer, audioSupported } from "./audio.js";
 import { Connection } from "./connection.js";
 import { errorText, t, unknownError } from "./strings.js";
@@ -10,6 +10,9 @@ const MAX_TEXT_CHARS = 200;
 // Keep the page light in a long session; the server replays only the last 50 anyway.
 const MAX_CHAT_ITEMS = 200;
 const NICK_KEY = "larpity.nick";
+// The AI ranks at most 20 (PROTOCOL.md); the closed list shows the top few so the chat keeps its room.
+const MAX_QUESTIONS = 20;
+const QUESTIONS_SHOWN_CLOSED = 3;
 function $(id) {
     const el = document.getElementById(id);
     if (!el)
@@ -22,6 +25,10 @@ const sendBtn = $("send-btn");
 const errorLine = $("chat-error");
 const banner = $("banner");
 const bannerText = $("banner-text");
+const questionsBox = $("questions");
+const questionsHead = $("questions-head");
+const questionsList = $("questions-list");
+const questionsMore = $("questions-more");
 // --- Saved nickname (so a reload or reconnect joins again without asking) ---
 function loadNick() {
     try {
@@ -68,6 +75,10 @@ let nickInBox = false;
 let isLive = false;
 /** The text of the last `question_picked`, or null if none has come since connecting. */
 let pickedText = null;
+/** The last `questions` list, best first; empty until one comes after connecting. */
+let questions = [];
+/** True while the student has the full list open. */
+let questionsOpen = false;
 // --- Rendering ---
 function setStatus(text, live) {
     const status = $("status");
@@ -80,18 +91,72 @@ function setStageMsg(text) {
 function setLive(live) {
     isLive = live;
     renderBanner();
+    renderQuestions();
     setStatus(live ? t.live : t.offline, live);
     if (!videoSupported())
         return setStageMsg(t.videoUnsupported);
     setStageMsg(live ? t.loadingVideo : t.waitingForStream);
+}
+function isChatAtBottom() {
+    return chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
+}
+/**
+ * Runs a change to the boxes above the chat. Growing, they shrink the chat without
+ * scrolling it, which would hide the newest messages and stop addChat following
+ * new ones, so a reader who was at the bottom is put back there.
+ */
+function keepChatAtBottom(change) {
+    const atBottom = isChatAtBottom();
+    change();
+    if (atBottom)
+        chatList.scrollTop = chatList.scrollHeight;
 }
 /**
  * Shows the question the professional is answering. Only while live: the server
  * keeps the last pick after the phone leaves, but then nobody is answering it.
  */
 function renderBanner() {
-    banner.hidden = !isLive || pickedText === null;
-    bannerText.textContent = pickedText ?? "";
+    keepChatAtBottom(() => {
+        banner.hidden = !isLive || pickedText === null;
+        bannerText.textContent = pickedText ?? "";
+    });
+}
+/**
+ * Shows the ranked questions with their counts. Only while live, like the banner:
+ * the server keeps its ranking while the phone is away but doesn't send it again
+ * when the phone comes back, so the list is hidden rather than thrown away.
+ */
+function renderQuestions() {
+    keepChatAtBottom(fillQuestions);
+}
+function fillQuestions() {
+    // An empty list (after the last pick, or on reconnect) comes back closed.
+    if (questions.length === 0)
+        questionsOpen = false;
+    questionsBox.hidden = !isLive || questions.length === 0;
+    questionsBox.classList.toggle("open", questionsOpen);
+    questionsHead.setAttribute("aria-expanded", String(questionsOpen));
+    const more = questions.length > QUESTIONS_SHOWN_CLOSED;
+    questionsMore.textContent = questionsOpen
+        ? t.showFewerQuestions
+        : more
+            ? t.showAllQuestions(questions.length)
+            : "";
+    const shown = questionsOpen ? questions : questions.slice(0, QUESTIONS_SHOWN_CLOSED);
+    questionsList.replaceChildren(...shown.map((q) => {
+        const li = document.createElement("li");
+        const text = document.createElement("span");
+        text.className = "q-text";
+        text.textContent = q.text;
+        li.append(text);
+        if (q.count > 0) {
+            const count = document.createElement("span");
+            count.className = "q-count";
+            count.textContent = `×${q.count}`;
+            li.append(count);
+        }
+        return li;
+    }));
 }
 function clearChat() {
     const li = document.createElement("li");
@@ -102,7 +167,7 @@ function clearChat() {
 function addChat(nick, text) {
     // Stick to the bottom only if the reader is already there, so scrolling up
     // to read older messages isn't interrupted.
-    const atBottom = chatList.scrollHeight - chatList.scrollTop - chatList.clientHeight < 40;
+    const atBottom = isChatAtBottom();
     chatList.querySelector(".empty")?.remove();
     const li = document.createElement("li");
     if (nick === myNick)
@@ -166,6 +231,10 @@ function onMessage(msg) {
         case "chat":
             addChat(msg.nick, msg.text);
             break;
+        case "questions":
+            questions = Array.isArray(msg.questions) ? msg.questions.slice(0, MAX_QUESTIONS) : [];
+            renderQuestions();
+            break;
         case "question_picked":
             pickedText = msg.text;
             // A new question starts clamped, even if the last one was opened up.
@@ -207,6 +276,7 @@ const conn = new Connection({
         // The server replays everything, so start clean.
         clearChat();
         pickedText = null;
+        questions = [];
         setLive(false);
         video?.reset();
         audio?.reset();
@@ -268,9 +338,15 @@ $("change-nick").addEventListener("click", () => {
     input.select();
 });
 // Long questions are cut to three lines so the chat keeps its room; a tap shows all of it.
-banner.addEventListener("click", () => banner.classList.toggle("open"));
+banner.addEventListener("click", () => keepChatAtBottom(() => banner.classList.toggle("open")));
+// The whole box is the tap target, not just its heading; the heading is a button for keyboards.
+questionsBox.addEventListener("click", () => {
+    questionsOpen = !questionsOpen;
+    renderQuestions();
+});
 $("listen-btn").textContent = t.tapToListen;
 $("banner-label").textContent = t.beingAnswered;
+$("questions-title").textContent = t.questionsTitle;
 $("me-label").textContent = t.writingAs;
 $("change-nick").textContent = t.changeNick;
 setStatus(t.connecting, false);
