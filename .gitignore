@@ -18,3 +18,6 @@ CLAUDE.local.md
 
 # Client dependencies
 /client/node_modules/
+
+# Local secrets
+.envi
