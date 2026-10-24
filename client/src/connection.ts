@@ -7,7 +7,7 @@ import type { AudioConfig } from "./audio.js";
 export type ServerMessage =
   | { type: "config"; video: { codec: string }; audio?: AudioConfig | null }
   | { type: "offline" }
-  | { type: "joined"; nick: string }
+  | { type: "joined"; nick: string; key: string }
   | { type: "chat"; id: number; nick: string; text: string; ts: number }
   | { type: "question_picked"; id: string; text: string }
   | { type: "error"; code: string; message?: string };
