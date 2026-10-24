@@ -53,6 +53,13 @@ let myNick: string | null = null;
  */
 let wantedNick: string | null = loadNick();
 /**
+ * The key from the last `joined`, sent with every join. After a network switch
+ * the server still holds our dead connection, and the key makes it free "Ana"
+ * for us instead of answering "Ana2". In memory only: a reload closes the old
+ * socket properly, so there is nothing to take back.
+ */
+let joinKey: string | null = null;
+/**
  * True while a join with `wantedNick` is on its way and `joined` hasn't come back.
  * The box stays in chat mode and sends nothing, so a half-typed message can't go
  * out as a nickname. Starts true with a saved name: the first connect joins with it.
@@ -156,6 +163,7 @@ function onMessage(msg: ServerMessage): void {
       break;
     case "joined":
       myNick = msg.nick;
+      joinKey = msg.key;
       rejoining = false;
       // Keep asking for "Ana", not "Ana2": the server may still hold our old
       // connection after a network switch, and adds a digit to whatever we ask for.
@@ -193,6 +201,12 @@ function onMessage(msg: ServerMessage): void {
   }
 }
 
+/** Asks for a nickname. Returns false if the socket isn't open. */
+function sendJoin(nick: string): boolean {
+  // The server ignores a key from this same connection, so it's safe on a name change too.
+  return conn.send(joinKey ? { type: "join", nick, key: joinKey } : { type: "join", nick });
+}
+
 // --- Video ---
 
 const video = videoSupported()
@@ -221,7 +235,7 @@ const conn = new Connection({
     myNick = null;
     rejoining = wantedNick !== null && !choosingNick;
     renderComposer();
-    if (rejoining && wantedNick) conn.send({ type: "join", nick: wantedNick });
+    if (rejoining && wantedNick) sendJoin(wantedNick);
   },
   onClose() {
     setStatus(t.connecting, false);
@@ -247,7 +261,7 @@ $<HTMLFormElement>("composer").addEventListener("submit", (e) => {
   if (myNick === null) {
     // Only remember the name once it's sent, so a failed send can't become the
     // nickname we rejoin with.
-    if (!conn.send({ type: "join", nick: text })) {
+    if (!sendJoin(text)) {
       showError(t.connecting);
       return;
     }
